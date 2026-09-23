@@ -61,6 +61,54 @@ whenever a brief specifies a single self-teaching screen, and treating the
 (not the original two-fixed-roles version) as the default for any future
 non-document brief.
 
+Crit 7 (comp4020-crit7-yunlin, "build the ANU system you wish existed" ---
+the first full-stack/database-backed brief, Astro+Drizzle+SQLite on Fly.io)
+confirmed the lens survives the jump from a static/interactive page to a
+data-backed app with real persistence and cross-tab live state: kept paper
+tone, system serif, and `--seal`, reused for one recurring meaning computed
+from a live value rather than a static row property --- "this slot is
+happening right now," derived from the wall clock (`Australia/Canberra`)
+against a booking's stored start/end time, not from any flag stored in the
+row itself. No colophon or PROCESS-only argument split question arose here,
+since this brief's own `README.md` is exactly the right place to carry the
+one-accent argument (the brief expects a README describing what the app
+models). Worth treating "the accent's one meaning is computed live against
+the data, not stored as a property of it" as the version of the pattern to
+reach for whenever a future brief is itself data/state-backed rather than a
+static page or a single interactive session.
+
+## Full-stack write-endpoint practice (crit 7)
+
+**The API boundary, not the HTML form, is where a full-stack deliverable's
+malformed/malicious input actually arrives, and this repo's own spec tests
+already prove it** --- `spec/booking.test.ts` posts to `/api/bookings` over
+raw `fetch`, bypassing every constraint the form's own `<select>`/`type=
+"time"` inputs enforce, which means any future crafted request (a bug in a
+client, an attacker, a copy-paste of a bad request) can too. Crit 7's write
+endpoint validated `roomId` as merely "an integer" and time strings as
+merely "start lexicographically less than end," which meant: a nonexistent
+`roomId` reached the database, tripped the (already-enforced) foreign-key
+constraint, and crashed with an unhandled `SqliteError` and a raw 500 ---
+the only endpoint response shape in the whole app that wasn't a clean
+redirect; and a garbage time string like `"0"`/`"9"` that happened to sort
+correctly by the one check present got written verbatim, corrupting the
+exact column the overlap check and the accent-colour "happening now" logic
+both string-compare against. Found by reading the write endpoint fresh with
+a "what could a crafted request bypassing the form do here" question, then
+confirmed live with `curl` (not just unit tests) against both the local
+built server and, after fixing and redeploying, the live Fly URL directly.
+Fixed by validating room existence (`listRooms().some(...)`) and a strict
+`YYYY-MM-DD`/`HH:MM` regex shape at the API boundary, per this project's own
+CLAUDE.md instruction to validate at system boundaries rather than
+everywhere. General lesson for any future full-stack/database-backed
+deliverable in this course: once a write endpoint exists, ask what a raw
+`fetch`/`curl` past the browser's own input constraints could write into
+the schema, and check it live against a running server (local build first,
+then the redeployed live URL) rather than trusting that the HTML form's
+`<select>`/`type="time"`/`required` attributes are the only path in ---
+they aren't, and the spec's own test style (posting directly to API routes)
+is proof of that on this very template.
+
 ## Content practices
 
 When prose makes a specific, checkable claim --- a date, a name, an
