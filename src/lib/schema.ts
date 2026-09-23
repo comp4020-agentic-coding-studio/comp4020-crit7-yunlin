@@ -7,12 +7,27 @@ import { int, sqliteTable, text } from "drizzle-orm/sqlite-core";
 // boots (see src/lib/db.ts), locally and deployed. Never edit the database
 // by hand: state on the deployed volume outlives every deploy, and the
 // migration trail is what keeps old state and new code compatible.
-export const messages = sqliteTable("messages", {
+export const rooms = sqliteTable("rooms", {
   id: int().primaryKey({ autoIncrement: true }),
-  body: text().notNull(),
+  name: text().notNull(),
+});
+
+// date/startTime/endTime are Canberra wall-clock text (YYYY-MM-DD, HH:MM) —
+// this prototype only ever means "the time on the room's own wall", so
+// there's no timezone to store or convert.
+export const bookings = sqliteTable("bookings", {
+  id: int().primaryKey({ autoIncrement: true }),
+  roomId: int("room_id")
+    .notNull()
+    .references(() => rooms.id),
+  date: text().notNull(),
+  startTime: text("start_time").notNull(),
+  endTime: text("end_time").notNull(),
+  bookedBy: text("booked_by").notNull(),
   createdAt: text("created_at")
     .notNull()
     .default(sql`(datetime('now'))`),
 });
 
-export type Message = typeof messages.$inferSelect;
+export type Room = typeof rooms.$inferSelect;
+export type Booking = typeof bookings.$inferSelect;
