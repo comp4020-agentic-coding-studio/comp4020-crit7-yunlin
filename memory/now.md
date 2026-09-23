@@ -1,36 +1,51 @@
 # now
 
-**State:** deliverable is functionally complete for this early stage. Room
-board — schema, overlap-checked booking API, cancel endpoint, SSE live
-reload, paper/serif/seal UI, favicon, README, `spec/booking.test.ts` — all
-committed (`3c93454` schema+API, `917103f` UI, `2f3f61d` spec, `9211415`
-README+CLAUDE.md rules, `5d3f05f` PROCESS.md). `pnpm check` is green (32/32
-tests, 0 typecheck errors). Deployed to Fly.io
-(`flyctl deploy --remote-only --ha=false -a comp4020-crit7-yunlin`) and
-verified live: home/readme/SSE all 200/streaming, a real booking made
-through `agent-browser` against the live URL showed the "— now" highlight,
-survived a reload, and was cancelled afterward to leave the board clean.
-Console clean, no errors. Working tree clean, 5 commits ahead of `origin/main`
-— **not yet pushed** (pushing is a deliberate step; this run stopped short of
-it per the doctrine's "commit with clear messages" for a non-final run,
-though nothing blocks pushing next run either).
+**State:** deepen phase, 159h to cutoff at the start of this run, now further
+along. Base build (schema, overlap-checked booking API, cancel, SSE reload,
+paper/serif/seal UI, README/CLAUDE.md/PROCESS.md) was already committed and
+pushed from the previous run. This run found and fixed a real bug: the
+booking write endpoint (`src/pages/api/bookings.ts`) trusted `roomId`/
+`date`/`startTime`/`endTime` shape entirely, so a crafted POST bypassing the
+HTML form (this repo's own `spec/booking.test.ts` already posts via raw
+`fetch`, so this isn't a hypothetical attacker) could (a) crash with an
+unhandled `SqliteError`/raw 500 via a nonexistent `roomId` — the foreign-key
+constraint fires, but nothing caught it — or (b) write garbage time strings
+(e.g. `"0"`/`"9"`) that happened to satisfy the only check
+(`startTime < endTime`), corrupting the column the overlap check and the
+"happening now" `--seal` highlight both string-compare against. Fixed by
+validating room existence and date/time regex shape at the API boundary
+(commit `675571d`), added three new tests in `spec/booking.test.ts` proving
+each crafted case now gets a graceful redirect with the right error code
+instead of a 500 or silent corruption, verified live against both a local
+built server and the redeployed Fly app (crafted requests to
+`https://comp4020-crit7-yunlin.fly.dev/api/bookings` now redirect with
+`error=room`/`error=invalid` instead of crashing), and confirmed the
+ordinary booking flow and the error banner still render correctly with
+`agent-browser`. `pnpm check` is green (35/35 tests). Deployed
+(`flyctl deploy --remote-only --ha=false -a comp4020-crit7-yunlin`), working
+tree clean, pushed to `origin/main`.
 
-**What I did this run:** picked and grounded the ANU system (ANU Library
-group study rooms, verified via WebSearch), designed and built the full
-booking flow end to end, wrote and passed `spec/booking.test.ts`, fixed a
-stale "Guestbook" nav-text bug and an Astro `<`-in-template compiler quirk
-found during live verification, wrote this repo's own `CLAUDE.md` rules,
-wrote `PROCESS.md` (297 words, within the crit's 150–300 range), deployed to
-Fly.io, and verified the live URL end to end in a real browser.
+**What I did this run:** read the brief again from the course API (unchanged
+from the previous run's fetch), took stock of the existing build, read every
+source file and the existing spec, then looked for a genuine correctness gap
+rather than re-verifying what was already checked. Found and fixed the
+validation gap above, wrote regression tests, verified live (local build
+and the redeployed Fly app), pushed, deployed.
 
-**Single most important next action:** this was likely the first substantive
-run at 165h to cutoff — plan/deepen from here. Nothing is broken; the next
-run should read this file, `git log`, and the live app, then look for gaps
-worth deepening (e.g. accessibility audit per the group's standing
-Lighthouse-porting practice — not yet wired for this repo; mobile-viewport
-check of the booking form and date nav; forced-colors/reduced-motion pass on
-the `.active` highlight; edge cases like booking a slot that starts before
-midnight or spans into a different date). Do **not** write
-`reflections/crit-7.md` or treat this as finishing steps until the prompt
-calls a run the last one — `check:evidence` failing on the missing
-reflection right now is expected, not a regression (see `memory/MEMORY.md`).
+**Single most important next action:** this is not the final run — don't
+write `reflections/crit-7.md` yet. Deepen-phase candidates still open, in
+roughly the order I'd try them: (1) a live `agent-browser` pass at the
+390x844 mobile marking viewport specifically for the booking form and date
+nav (never checked this repo at that viewport); (2) `forced-colors`/
+`prefers-reduced-motion`/dark-mode media emulation against the `--seal`
+active-row highlight and error banner, per the group's standing CDP-script
+technique in `MEMORY.md`; (3) whether SQLite's WAL mode plus Fly's single-
+machine setup could ever let a stopped/auto-suspended machine lose an
+in-flight write — probably not worth chasing without a concrete mechanism,
+but worth a `flyctl logs` read if anything looks off; (4) a slow-connection
+throttled-load pass per the group's standing artefact-HD-band check. Don't
+manufacture a pass if a fresh read of the source turns up nothing — this
+run's bug was found by reading every file with a "what could a crafted
+request do here" question, not by re-running an existing checklist; the
+next run should ask its own new question of the code, not just repeat this
+one's technique verbatim.
