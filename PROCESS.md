@@ -1,54 +1,42 @@
 # Process overview
 
-<!-- TEMPLATE: this file is a shape to fill in, not a form. Replace everything
-     in it with your own overview, and delete this comment — `pnpm
-     check:evidence` will remind you if it's still here. -->
-
-Written by you, for a reader: how you got from the brief to the harness and
-agentic workflow behind this submission. Markers read this file and follow its
-citations; they don't trawl the repo for evidence you didn't point at.
-
-This file is the shape; the course site's
-[assessment page](https://comp.anu.edu.au/courses/comp4020-agentic-coding-studio/topics/assessment/#what-you-submit)
-is the requirement, and its
-[word counts](https://comp.anu.edu.au/courses/comp4020-agentic-coding-studio/topics/assessment/#word-counts)
-cover every deliverable.
-
 ## What I built
 
-A sentence or two. `README.md` is where the account of what the app is and what
-good means here lives; this file is how you got there.
+A live room board for a handful of ANU Library group study rooms --- book a
+free slot, see what's booked and what's happening right now, cancel a
+booking to free it back up, all wired to a real SQLite database and kept in
+sync across open tabs over server-sent events. `README.md` carries the full
+account of what it's a slice of and what good looks like here.
 
 ## How I got here
 
-The account of the process: how the work actually went, and how you knew the
-result was right. Tell it in whatever order makes it clear. A weekly prototype
-needs a paragraph or two; an assignment needs more.
+I picked ANU Library's group study room booking before writing any code,
+grounding the choice by searching for the real system's behaviour rather
+than assuming it. Its one real annoyance: it says a room is booked, never
+whether anyone's actually in it --- the whole argument for the one accent
+colour.
 
-Cite the record as you go, as links whose text is the commit hash or range and
-whose target is this repo's commit or compare URL, so a reader clicks straight
-to the evidence:
+Starting from the starter's guestbook, I replaced the schema with
+`rooms`/`bookings`
+([`3c93454`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit7-yunlin/commit/3c93454)),
+gave `addBooking` a synchronous overlap check, and reused the SSE channel so
+a booking or cancellation reloads any tab on the same date. The UI
+([`917103f`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit7-yunlin/commit/917103f))
+carries this agent's paper/serif/single-accent throughline into a data app
+for the first time: `--seal` marks one thing, computed against the wall
+clock in `Australia/Canberra`, not the server's timezone.
 
-- one commit: [`a1b2c3d`](https://github.com/YOUR-ORG/YOUR-REPO/commit/a1b2c3d)
-- a range:
-  [`a1b2c3d...e4f5a6b`](https://github.com/YOUR-ORG/YOUR-REPO/compare/a1b2c3d...e4f5a6b)
+`spec/booking.test.ts`
+([`2f3f61d`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit7-yunlin/commit/2f3f61d))
+checks persistence, conflict rejection, cancel-then-rebook and SSE broadcast
+against the running app. A live `agent-browser` pass beyond the tests ---
+booking, conflicting, cancelling, watching a second tab reload --- caught a
+bug the tests never would: the About page's nav still read "Guestbook" after
+the app was renamed.
 
-To pair a prompt with the commit it produced, quote the prompt (curated, not a
-full transcript) next to the citation:
+## What I decided not to build
 
-> the prompt, verbatim
-
-Screenshots are welcome where one carries the point better than a sentence does.
-Commit the file to this repo and link it with a **relative** path, which is what
-makes it render on GitHub: `![alt text](docs/before.png)`. Images don't count
-towards the word count and don't replace the citation.
-
-## Before you ship
-
-`pnpm check:evidence` verifies that this comment is gone, that your citations
-resolve to real commits, that a crit week's reflection entry is in
-`reflections/`, and that your `CLAUDE.md` is there. It checks that your account
-is traceable, not that it is good: that is the marker's call.
-
-Images aren't checked: unlike a citation whose SHA doesn't resolve, a broken
-image is visible the moment this file is rendered on GitHub.
+No login (no real ANU identity to check here), no search across all of
+ANU's rooms (three seeded rooms exercise the mechanic), no recurring
+bookings --- a board that books one slot at a time is honest about the
+smaller thing it models.
