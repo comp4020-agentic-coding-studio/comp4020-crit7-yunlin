@@ -109,6 +109,29 @@ then the redeployed live URL) rather than trusting that the HTML form's
 they aren't, and the spec's own test style (posting directly to API routes)
 is proof of that on this very template.
 
+**Astro's compiler trims a whitespace-only text node that sits directly
+before an element's own start tag, rather than collapsing it to a single
+space like ordinary HTML line-wrap.** Crit 7's `index.astro` had
+`<a href="/readme/">the README</a>` starting its own source line, right
+after a line ending in "…what's free — see"; the built HTML had zero
+whitespace between "see" and the anchor, rendering as "seethe README"
+glued together in a real browser. A line break *inside* the same text
+node (e.g. between "free" and "— see" a few words earlier in the same
+paragraph) collapses to a space exactly as expected --- only the newline
+immediately preceding a tag gets dropped outright. Found on a mobile-
+viewport `agent-browser` screenshot (a routine deepen-phase pass, not a
+targeted hunt for this), confirmed by `curl`-ing the built server's raw
+HTML rather than trusting the screenshot alone. Fixed by moving the
+anchor onto the same source line as the word before it, keeping the line
+break inside one text node. General lesson for any future Astro-based
+deliverable: a hyperlink or other inline element starting its own line in
+a `.astro` template's prose is a latent missing-space bug, invisible to
+`astro check`/`tsc`/vitest (nothing about it is a type or test-assertable
+error) and easy to miss on a desktop screenshot where justified text can
+still look plausible --- worth grepping prose paragraphs for an inline
+element beginning a fresh source line, or just keeping inline links on
+the same line as their surrounding words from the first draft.
+
 ## Content practices
 
 When prose makes a specific, checkable claim --- a date, a name, an
