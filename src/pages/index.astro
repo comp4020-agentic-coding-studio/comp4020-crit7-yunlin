@@ -1,8 +1,56 @@
 ---
-import { listMessages } from "../lib/db";
+import { listBookingsForDate, listRooms } from "../lib/db";
 import "../styles.css";
 
-const messages = listMessages();
+// All times on this board are Canberra wall-clock text (see src/lib/schema.ts)
+// — "now" has to be read the same way, regardless of what timezone the
+// machine running the server happens to be in.
+function canberraParts(d = new Date()) {
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Australia/Canberra",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const parts = Object.fromEntries(fmt.formatToParts(d).map((p) => [p.type, p.value]));
+  return { date: `${parts.year}-${parts.month}-${parts.day}`, time: `${parts.hour}:${parts.minute}` };
+}
+
+function shiftDate(base: string, days: number): string {
+  const d = new Date(`${base}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+const { date: today, time: nowTime } = canberraParts();
+const requestedDate = Astro.url.searchParams.get("date");
+const date = requestedDate && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate) ? requestedDate : today;
+const isToday = date === today;
+const error = Astro.url.searchParams.get("error");
+
+const errorMessages: Record<string, string> = {
+  conflict: "That room is already booked for part of this time — pick another slot.",
+  invalid: "The end time has to be after the start time.",
+  name: "Enter your name so the room knows who's got it.",
+  room: "Pick a room.",
+};
+
+const rooms = listRooms();
+const bookingsForDate = listBookingsForDate(date);
+// Whether "now" falls inside a booking is decided here, in plain TS, and
+// carried on the data — the Astro compiler reads a bare `<` inside a JSX-like
+// expression as the start of a tag, so that comparison can't live inline in
+// the template below.
+const isNowWithin = (start: string, end: string) => isToday && start <= nowTime && nowTime < end;
+const roomsWithBookings = rooms.map((room) => ({
+  room,
+  bookings: bookingsForDate
+    .filter((b) => b.roomId === room.id)
+    .map((b) => ({ ...b, active: isNowWithin(b.startTime, b.endTime) })),
+}));
 ---
 
 <!doctype html>
@@ -10,43 +58,96 @@ const messages = listMessages();
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>COMP4020 prototype</title>
+    <meta
+      name="description"
+      content="A live board for ANU Library group study rooms — book a slot, see who's got a room right now, cancel one you don't need."
+    />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>Room board</title>
   </head>
   <body>
     <nav aria-label="site">
-      <a href="/">Guestbook</a>
+      <a href="/">Room board</a>
       <a href="/readme/">About</a>
     </nav>
     <main>
-      <h1>Guestbook</h1>
+      <h1>Room board</h1>
       <p>
-        A minimal full-stack starter: messages live in SQLite on the machine's
-        volume (state survives a reload and a redeploy), and new messages
-        appear in every open tab over a server-sent-events stream — open this
-        page twice and sign it in one. Replace all of this with your own
-        prototype.
+        A shared, live view of a handful of ANU Library group study rooms: who's booked what, and what's free — see
+        <a href="/readme/">the README</a> for what this prototype is standing in for.
       </p>
-      <form method="post" action="/api/messages">
-        <label for="body">Leave a message</label>
-        <input id="body" name="body" required maxlength="500" />
-        <button>Sign</button>
+
+      <nav aria-label="date">
+        <a href={`/?date=${shiftDate(date, -1)}`}>&larr; {shiftDate(date, -1)}</a>
+        <strong>{date}{isToday ? " (today)" : ""}</strong>
+        <a href={`/?date=${shiftDate(date, 1)}`}>{shiftDate(date, 1)} &rarr;</a>
+      </nav>
+
+      {error && (
+        <p class="error" role="alert">
+          {errorMessages[error] ?? "Something went wrong — try again."}
+        </p>
+      )}
+
+      <div class="rooms">
+        {roomsWithBookings.map(({ room, bookings }) => (
+          <section class="room" aria-labelledby={`room-${room.id}`}>
+            <h2 id={`room-${room.id}`}>{room.name}</h2>
+            <ul>
+              {bookings.length === 0 && <li class="empty">Free all day</li>}
+              {bookings.map((booking) => (
+                <li class={booking.active ? "active" : undefined}>
+                  <span class="time">
+                    {booking.startTime}–{booking.endTime}
+                  </span>
+                  <span class="who">{booking.bookedBy}</span>
+                  <form method="post" action={`/api/bookings/${booking.id}/cancel`}>
+                    <input type="hidden" name="date" value={date} />
+                    <button type="submit">Cancel</button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))}
+      </div>
+
+      <form method="post" action="/api/bookings" class="book-form">
+        <h2>Book a room</h2>
+        <input type="hidden" name="date" value={date} />
+        <div>
+          <label for="roomId">Room</label>
+          <select id="roomId" name="roomId" required>
+            {rooms.map((room) => (
+              <option value={room.id}>{room.name}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label for="bookedBy">Your name</label>
+          <input id="bookedBy" name="bookedBy" required maxlength="80" />
+        </div>
+        <div>
+          <label for="startTime">From</label>
+          <input id="startTime" name="startTime" type="time" required />
+        </div>
+        <div>
+          <label for="endTime">To</label>
+          <input id="endTime" name="endTime" type="time" required />
+        </div>
+        <button>Book {date}</button>
       </form>
-      <ul id="messages">
-        {messages.map((message) => <li>{message.body}</li>)}
-      </ul>
     </main>
-    <script>
-      // The live half of the demo: subscribe to the SSE stream and prepend
-      // messages as they arrive. The form itself needs none of this — its
-      // POST + redirect re-renders the submitting tab from SQLite; this
-      // stream is how every other tab finds out.
-      const list = document.querySelector("#messages");
+    <script is:inline define:vars={{ date }}>
+      // The board's live half: any tab looking at this same date reloads the
+      // moment a booking is made or cancelled anywhere, so two people looking
+      // at the same day never work from stale information. The form itself
+      // needs none of this — its own POST + redirect already re-renders from
+      // SQLite.
       const source = new EventSource("/api/events");
-      source.addEventListener("message", (event) => {
-        const message = JSON.parse(event.data);
-        const item = document.createElement("li");
-        item.textContent = message.body;
-        list?.prepend(item);
+      source.addEventListener("booking", (event) => {
+        const payload = JSON.parse(event.data);
+        if (payload.date === date) location.reload();
       });
     </script>
   </body>
