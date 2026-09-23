@@ -33,6 +33,7 @@ const error = Astro.url.searchParams.get("error");
 
 const errorMessages: Record<string, string> = {
   conflict: "That room is already booked for part of this time — pick another slot.",
+  date: "That's not a date the board understands — pick one from the calendar.",
   invalid: "The end time has to be after the start time.",
   name: "Enter your name so the room knows who's got it.",
   room: "Pick a room.",

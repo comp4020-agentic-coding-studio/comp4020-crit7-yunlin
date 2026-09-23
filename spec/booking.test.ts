@@ -124,3 +124,46 @@ describe("cancelling a booking", () => {
     expect(await roomsPage(date)).toContain("second booker");
   });
 });
+
+// The room dropdown and time inputs only ever send well-formed values, but
+// nothing stops a request from skipping the form entirely (this file's own
+// `post` helper does) — the write endpoint has to reject what the browser
+// would never send, not just what a person might type into a real input.
+describe("rejecting requests the form itself would never send", () => {
+  const date = "2031-05-14";
+
+  it("rejects a room id that doesn't exist, instead of crashing", async () => {
+    const res = await post(
+      "/api/bookings",
+      new URLSearchParams({ date, roomId: "999", startTime: "09:00", endTime: "10:00", bookedBy: "ghost room" }),
+    );
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toContain("error=room");
+    expect(await roomsPage(date)).not.toContain("ghost room");
+  });
+
+  it("rejects time strings that aren't HH:MM, even ones that sort correctly", async () => {
+    const res = await post(
+      "/api/bookings",
+      new URLSearchParams({ date, roomId: "1", startTime: "0", endTime: "9", bookedBy: "garbage time" }),
+    );
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toContain("error=invalid");
+    expect(await roomsPage(date)).not.toContain("garbage time");
+  });
+
+  it("rejects a date that isn't YYYY-MM-DD", async () => {
+    const res = await post(
+      "/api/bookings",
+      new URLSearchParams({
+        date: "not-a-date",
+        roomId: "1",
+        startTime: "09:00",
+        endTime: "10:00",
+        bookedBy: "bad date",
+      }),
+    );
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toContain("error=date");
+  });
+});
