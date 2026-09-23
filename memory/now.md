@@ -1,51 +1,63 @@
 # now
 
-**State:** deepen phase, 159h to cutoff at the start of this run, now further
-along. Base build (schema, overlap-checked booking API, cancel, SSE reload,
-paper/serif/seal UI, README/CLAUDE.md/PROCESS.md) was already committed and
-pushed from the previous run. This run found and fixed a real bug: the
-booking write endpoint (`src/pages/api/bookings.ts`) trusted `roomId`/
-`date`/`startTime`/`endTime` shape entirely, so a crafted POST bypassing the
-HTML form (this repo's own `spec/booking.test.ts` already posts via raw
-`fetch`, so this isn't a hypothetical attacker) could (a) crash with an
-unhandled `SqliteError`/raw 500 via a nonexistent `roomId` — the foreign-key
-constraint fires, but nothing caught it — or (b) write garbage time strings
-(e.g. `"0"`/`"9"`) that happened to satisfy the only check
-(`startTime < endTime`), corrupting the column the overlap check and the
-"happening now" `--seal` highlight both string-compare against. Fixed by
-validating room existence and date/time regex shape at the API boundary
-(commit `675571d`), added three new tests in `spec/booking.test.ts` proving
-each crafted case now gets a graceful redirect with the right error code
-instead of a 500 or silent corruption, verified live against both a local
-built server and the redeployed Fly app (crafted requests to
-`https://comp4020-crit7-yunlin.fly.dev/api/bookings` now redirect with
-`error=room`/`error=invalid` instead of crashing), and confirmed the
-ordinary booking flow and the error banner still render correctly with
-`agent-browser`. `pnpm check` is green (35/35 tests). Deployed
-(`flyctl deploy --remote-only --ha=false -a comp4020-crit7-yunlin`), working
-tree clean, pushed to `origin/main`.
+**State:** deepen phase, 148h to cutoff at the start of this run. Base build
+plus last run's API-boundary validation fix were already committed, pushed,
+and deployed. This run found and fixed a real rendering bug, then closed out
+several deepen-phase candidates the previous hand-off had queued.
 
-**What I did this run:** read the brief again from the course API (unchanged
-from the previous run's fetch), took stock of the existing build, read every
-source file and the existing spec, then looked for a genuine correctness gap
-rather than re-verifying what was already checked. Found and fixed the
-validation gap above, wrote regression tests, verified live (local build
-and the redeployed Fly app), pushed, deployed.
+**What I did this run:** re-fetched the brief (unchanged), took stock of the
+clean git tree, then read every source file fresh with a new question each
+time rather than re-running the existing checklist:
+
+- **Found and fixed a real bug**: `index.astro`'s intro paragraph had
+  `<a href="/readme/">the README</a>` starting its own source line. Astro's
+  compiler trims a trailing newline+indentation text node that sits directly
+  before an element's start tag instead of collapsing it to a space (unlike
+  the rest of the paragraph's line breaks, which collapse fine mid-text-node)
+  — so the built HTML literally had zero whitespace between "see" and the
+  anchor, rendering as "seethe README" glued together. Confirmed via
+  `curl`-ing the built server's raw HTML (not just eyeballing a screenshot —
+  a mobile-viewport `agent-browser` screenshot is what first surfaced it).
+  Fixed by moving the anchor onto the same source line as the word before it
+  (`— see\n        the <a href="/readme/">README</a> for...`), so the line
+  break stays inside one text node where normal whitespace collapse applies;
+  verified by rebuilding, curling, and re-screenshotting both viewports.
+  Committed (`1d6cf75`) and deployed; confirmed live at
+  `https://comp4020-crit7-yunlin.fly.dev/` via `curl`.
+- **Mobile viewport (390x844) pass**: this is what surfaced the bug above.
+  Otherwise clean — seal highlight, "— now" annotation, cancel button, and
+  the booking form all render legibly at that width.
+- **Dark-mode emulation** (`agent-browser set media dark`): identical
+  rendering to light mode, as expected — this app has no
+  `prefers-color-scheme` media query, a deliberate fixed-palette choice
+  matching crit 4/5's precedent, not an oversight.
+- **Forced-colors/prefers-contrast emulation** (raw CDP script, since
+  `agent-browser` has no shortcut for it — same technique logged in
+  `MEMORY.md` for crit 5): `--seal` gets correctly overridden to system
+  colours everywhere it's used (the active-row background, border-left, the
+  "— now" text, the error banner, the dark "book" button). The one-accent
+  "happening now" meaning degrades to a plain black border-left plus the
+  italic "— now" text once colour is stripped — a real reduction in how
+  visible it is (every room card already has its own black border, so the
+  extra border-left reads as subtler than in colour), but every room's
+  active/free state is still legible from the border/text alone, not lost
+  outright. Judged this the expected, correct behaviour of forced-colors
+  mode (it's designed to replace author colour with structure, and there is
+  a structural cue here), not a bug to fix — same "closed clean" call
+  `MEMORY.md` already logged for crit 5's equivalent check.
+- Ran `pnpm check` (35/35 green) before and after the fix, deployed, and
+  confirmed the live URL serves the new HTML.
 
 **Single most important next action:** this is not the final run — don't
 write `reflections/crit-7.md` yet. Deepen-phase candidates still open, in
-roughly the order I'd try them: (1) a live `agent-browser` pass at the
-390x844 mobile marking viewport specifically for the booking form and date
-nav (never checked this repo at that viewport); (2) `forced-colors`/
-`prefers-reduced-motion`/dark-mode media emulation against the `--seal`
-active-row highlight and error banner, per the group's standing CDP-script
-technique in `MEMORY.md`; (3) whether SQLite's WAL mode plus Fly's single-
-machine setup could ever let a stopped/auto-suspended machine lose an
-in-flight write — probably not worth chasing without a concrete mechanism,
-but worth a `flyctl logs` read if anything looks off; (4) a slow-connection
-throttled-load pass per the group's standing artefact-HD-band check. Don't
-manufacture a pass if a fresh read of the source turns up nothing — this
-run's bug was found by reading every file with a "what could a crafted
-request do here" question, not by re-running an existing checklist; the
-next run should ask its own new question of the code, not just repeat this
-one's technique verbatim.
+roughly the order I'd try them: (1) a slow-connection throttled-load pass
+(the artefact HD band's third named scenario, per `MEMORY.md`'s standing
+practice — never tried on this repo yet); (2) whether SQLite's WAL mode
+plus Fly's single-machine auto-suspend could ever lose an in-flight write —
+still just a hunch, not a concrete mechanism, so don't manufacture a test
+without one; (3) reread `README.md`/`PROCESS.md`/this `CLAUDE.md` against
+what's actually shipped, the same "does this checkable claim hold" pass the
+group's other crits already do routinely for this repo — not yet done here.
+Whatever's tried next, prefer a genuinely new question over re-verifying
+what this run already closed (mobile viewport, dark mode, forced-colors are
+all done, not just "probably fine").
