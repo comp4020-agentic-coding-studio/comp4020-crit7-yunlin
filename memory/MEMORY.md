@@ -54,3 +54,27 @@ server's own timezone.
   `agent-browser`, confirming the "— now" highlight, persistence across
   reload, and a clean console, before leaving the board back at "Free all
   day" for the next person who looks at it.
+- **Cross-tab SSE live update confirmed clean with two genuinely separate
+  `agent-browser` sessions** (`--session tabA` / `--session tabB`, both
+  `--args "--no-sandbox"` on this container), not just the single
+  `EventSource` probe a prior run had already tried. Against the built
+  `pnpm preview` server: tab A submitted a booking, tab B (untouched)
+  auto-reloaded via the shared `EventEmitter` bus with no manual reload
+  command and rendered the new row; tab B then cancelled it and tab A's
+  own reload reflected the cancellation the same way. Both directions
+  clean, console clean throughout on both tabs. This is the scenario
+  `index.astro`'s own comment names ("two people looking at the same day
+  never work from stale information") — worth treating as the check that
+  actually discharges that comment's claim, distinct from a same-tab
+  `EventSource` probe.
+- Two `agent-browser` footguns hit while driving the booking form for the
+  check above: `fill` on a native `<input type="time">` silently leaves
+  the value empty (Chromium's time control doesn't accept the plain
+  colon-separated keystrokes `fill` types) — set `.value` via `eval` and
+  dispatch `input`+`change` events instead. And a bare `click "button"`
+  selector matched the time input's own exposed "Show time picker"
+  accessibility-tree button, not the form's real submit button, with no
+  error — the same ambiguous-match shape already logged for `find text
+  ... click` in the group `MEMORY.md`, but here from a plain-tag selector
+  rather than a text match; `snapshot` for a `ref=` and `click "ref=eN"`
+  fixed it.

@@ -1,88 +1,44 @@
 # now
 
-**State:** deepen phase, 141h to cutoff at the start of this run. Previous
-run's Astro whitespace fix was already committed, pushed, and deployed. This
-run found and fixed a real violation of this deliverable's own one-accent
-rule, then closed out two of the three deepen candidates the previous
-hand-off had queued.
+**State:** deepen phase, 135h to cutoff at the start of this run. Previous
+run's `.error`/`--seal` accent fix was already committed, pushed, and
+deployed; all three previously-queued deepen candidates (slow-connection
+throttle, SQLite/auto-suspend hunch, README/CLAUDE.md reread) were closed.
+This run tried one of the two remaining untried angles from that hand-off —
+the cross-tab SSE check — and found no bug: a genuine "closed clean" result,
+not a fix. No code changed this run; only memory.
 
-**What I did this run:** re-fetched the brief (unchanged), confirmed `pnpm
-check` green, then read `README.md`/`PROCESS.md`/every source file fresh
-against this repo's own `CLAUDE.md` rule ("one held-back accent colour, one
-recurring meaning... don't add a second meaning to it") rather than
-re-verifying anything already closed:
-
-- **Found and fixed a real bug**: `styles.css`'s `.error` banner (the
-  validation/conflict error message) used `--seal` — the same accent colour
-  reserved for "this slot is happening right now" — for border and text
-  colour, present since the very commit (`917103f`) that introduced the
-  accent, whose own commit message claims "the one accent colour marks
-  exactly one thing." A second, unrelated meaning (an error state) on the
-  same colour is exactly what this deliverable's `CLAUDE.md` forbids. Fixed
-  by moving `.error` to plain `--ink` styling (with a heavier 2px border to
-  keep it visually distinct from ordinary text). Verified live: built,
-  ran `pnpm check` (35/35 green before and after), started `pnpm preview`,
-  hit `/?error=conflict` and confirmed via `getComputedStyle` the banner now
-  reads `rgb(35, 33, 29)` (== `--ink`), screenshotted it, then made a real
-  booking spanning the current Canberra time and confirmed the active-row
-  seal highlight (`border-left-color: rgb(138, 51, 36)` == `--seal`) still
-  renders correctly and is the only remaining use of the accent. Cancelled
-  the test booking via the UI afterwards. Committed (`25f297f`), deployed,
-  and confirmed live via `curl` that the deployed inlined CSS now reads
-  `.error{border:1px solid var(--ink);color:var(--ink);...}` while
-  `.room li.active` still reads `var(--seal)`.
-- **Slow-connection throttled-load pass** (queued candidate #1, the artefact
-  HD band's third named scenario, never tried on this repo before): raw CDP
-  script (`Target.getTargets` → `attachToTarget` flatten → `sessionId`,
-  same technique logged in `MEMORY.md` for assignment 2) driving
-  `Network.emulateNetworkConditions` at 400kbps/400ms latency against the
-  built `pnpm preview` server. Closed clean: full page load in ~500ms, zero
-  failed requests, zero console errors — this page has no images and
-  minimal inline CSS/JS, so there was never much for a slow connection to
-  bite on. Also confirmed a fresh `EventSource('/api/events')` still opens
-  successfully under the same throttle. Worth recording as a genuine "closed
-  clean" check discharged (the page structurally has little exposure to
-  this risk), not a skipped one.
-- **SQLite WAL + Fly auto-suspend hunch** (queued candidate #2): worked
-  through the mechanism analytically rather than manufacturing an
-  unfalsifiable live test, per the standing "don't manufacture a test
-  without a concrete mechanism" discipline. `db.ts`'s own comment already
-  notes every write is synchronous (`better-sqlite3`); Node can only
-  process an incoming stop signal between synchronous calls, never mid-call,
-  so there is no window for `auto_stop_machines = "stop"` (`fly.toml`) to
-  interrupt a write in progress — by the time a stop signal is even
-  handled, the write has already returned to the event loop, meaning the
-  transaction is already committed to the WAL. Fly's auto-stop is an
-  orderly VM stop (SIGINT then a grace period), not a power-loss event, so
-  the committed WAL frames survive it regardless of checkpoint timing.
-  Concluded this closes as "reasoned through, no real mechanism found" —
-  a third outcome alongside "closed clean" and "closed, fixed a bug",
-  same as the `Target.discardTarget`-absence precedent in `MEMORY.md` — not
-  worth a live test, since there's no way to safely force real Fly
-  auto-suspend timing against the deployed app without risk, and the
-  architecture rules out the race at the Node/SQLite level regardless of
-  timing.
-- Third candidate (reread `README.md`/`PROCESS.md`/`CLAUDE.md` against
-  what's shipped) is what surfaced the `.error`/`--seal` bug above — done,
-  not still open. Everything else in that reread checked out: 3 seeded
-  rooms match README's "three seeded rooms," the Canberra wall-clock
-  computation in `index.astro` matches the "computed from the wall clock,
-  not a static property" claim, the nav wording matches on both pages, and
-  `spec/booking.test.ts` covers all four bullet claims in README's
-  enforced-by list.
+**What I did this run:** re-fetched the brief (unchanged from the last two
+runs), confirmed `pnpm check` green (35/35), then ran the queued **cross-tab
+SSE check** for real: built and started `pnpm preview` against a fresh temp
+SQLite DB, opened two genuinely separate `agent-browser` sessions
+(`--session tabA`/`tabB`, both needing `--args "--no-sandbox"` on this
+container) on the same date's room board — distinct from every prior check
+of this feature, which only ever used a single tab plus a raw `EventSource`
+probe. Tab A submitted a booking; tab B, never touched, auto-reloaded via
+the shared bus with no manual reload command and rendered the new row. Tab
+B then cancelled it; tab A's own reload reflected the cancellation the same
+way. Both directions clean, console clean on both tabs throughout. This is
+exactly the scenario `index.astro`'s own comment claims ("two people looking
+at the same day never work from stale information") — now actually verified
+with two real tabs, not assumed from the single-probe check alone. Hit and
+recorded two `agent-browser` footguns along the way (native `type="time"`
+inputs don't accept `fill`'s keystrokes; a bare `button` selector matched
+the time input's own "Show time picker" a11y button before the real submit
+button) — both in the repo's `memory/MEMORY.md`. Cleaned up: closed both
+tabs, killed the preview server, deleted the temp DB, confirmed `git
+status` clean and `pnpm check` still green.
 
 **Single most important next action:** this is not the final run — don't
-write `reflections/crit-7.md` yet. All three previously-queued deepen
-candidates are now closed (one fixed a real bug, one closed clean, one
-closed as reasoned-through-no-mechanism). Next run needs a genuinely new
-question, not a re-verification of any of the above. Untried angles worth
-considering: a live forced-colours/prefers-contrast recheck specifically on
-the now-changed `.error` banner (the dark-mode/forced-colors pass logged in
-the prior hand-off predates this fix); a cross-tab SSE check with two real
-`agent-browser` sessions open simultaneously (only ever checked with one
-session plus a raw `EventSource` probe so far, never two live tabs actually
-reloading each other); or a bfcache/back-navigation check on this page
-(logged in `MEMORY.md` as a distinct scenario from tab-visibility and
-CDP-freeze checks, tried on crit 4/5's canvas apps but never on this
-server-rendered, SSE-driven one). Whatever's tried, favour a new angle over
-re-confirming what's already closed.
+write `reflections/crit-7.md` yet. One untried angle remains queued from two
+hand-offs ago: a **bfcache/back-navigation check** on this server-rendered,
+SSE-driven page (logged in the group `MEMORY.md` as a distinct scenario from
+tab-visibility/CDP-freeze, tried on crit 4/5's canvas apps but never on a
+page whose live-update mechanism is a page-level `EventSource` rather than
+Web Audio state) — does the `EventSource` connection survive a bfcache
+restore, or does the restored page silently stop receiving live updates
+until a real reload? A second worth considering: a **forced-colors/
+prefers-contrast recheck specifically on the now-changed `.error` banner**
+(the existing forced-colors pass in this repo's history predates the
+`--ink`-styling fix). Whatever's tried, favour a genuinely new angle over
+re-confirming what two clean runs in a row have already closed.
