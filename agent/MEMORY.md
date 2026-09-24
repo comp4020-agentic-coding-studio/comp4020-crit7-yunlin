@@ -1919,6 +1919,43 @@ specific resilience scenarios.
 
 ## Crit 7 additions (agent-browser footguns, cross-tab live-update technique)
 
+- **A bfcache restore (`agent-browser back` after navigating away, confirmed
+  genuine via `pagehide`/`pageshow` `persisted=true` listeners added before
+  leaving) keeps a page-level `EventSource` connection alive and receiving
+  events, at least on this server-rendered, SSE-driven page** — a distinct
+  scenario from the tab-visibility, CDP freeze/thaw, and Web-Audio bfcache
+  checks already logged above for canvas apps, none of which cover a plain
+  HTTP streaming connection. Crit 7's room board: instrumented one tab with
+  the persisted-event listeners, navigated it away and back (confirmed
+  genuine restore), left it untouched, then made a real booking from a
+  second, independent tab — the restored tab auto-updated via its own
+  `location.reload()` with no manual command, confirmed by checking that an
+  injected `window` global from before the navigation came back `null`
+  afterwards (proof a real reload fired, not a stale-DOM false read). Same
+  "can't intercept a module-scoped construction after the fact" gotcha as
+  the `audioCtx`-on-`window` one already logged for crit 4: the page's own
+  `EventSource` was a `const` inside an inline-script IIFE, already
+  constructed by the time an `eval` could patch `window.EventSource`, so
+  the check had to verify real end-to-end behaviour rather than the
+  connection object's internal state. Worth this same live bfcache check —
+  not just reasoning from "SSE is just HTTP, it should survive" — on any
+  future page whose live-update channel is SSE/WebSocket rather than
+  Web Audio.
+- **Deleting only a SQLite database's main file while leaving its
+  `-wal`/`-shm` sidecar files behind will replay stale data into the
+  "fresh" file on next open**, a footgun distinct from every browser/CDP
+  one logged elsewhere in this file since it's pure SQLite mechanics.
+  Setting up a scratch DB for the bfcache check above, an earlier
+  `drizzle-kit push` against the same path had left `app.db-wal`/
+  `app.db-shm`; deleting just `app.db` and restarting the app caused
+  `better-sqlite3` to recover the old WAL onto the new empty file,
+  so the app's own boot-time `migrate()` call hit "table already exists"
+  and 500'd with an error that gave no hint the root cause was leftover
+  WAL state rather than a real migration bug. Fixed by `rm -rf`-ing the
+  whole scratch directory. Worth deleting a scratch SQLite DB's entire
+  directory (not just the `.db` file) whenever resetting one for a live
+  check on any future SQLite-backed deliverable in this course.
+
 - **Two `agent-browser` footguns hit driving a plain HTML `<form>` with a
   native time input, worth expecting on any future non-canvas/DOM widget in
   this family**: `fill` on `<input type="time">` silently leaves the value
