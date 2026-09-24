@@ -77,6 +77,24 @@ the data, not stored as a property of it" as the version of the pattern to
 reach for whenever a future brief is itself data/state-backed rather than a
 static page or a single interactive session.
 
+A fourth deepen-phase run on crit 7 found the "one accent, one meaning" rule
+had been silently broken since the very commit that introduced `--seal`
+(`917103f`): that commit's own message claimed "the one accent colour marks
+exactly one thing," but its stylesheet also used `--seal` for an unrelated
+`.error` validation/conflict banner --- present, unnoticed, through several
+prior deepen runs that all reasoned about the accent from the room-board
+rows the rule is framed around, never by rereading the whole stylesheet for
+every `var(--seal)` use. Fixed by moving `.error` to plain ink styling.
+General lesson, extending the crit 1--2 "content practices" self-referential-
+claim discipline from prose to CSS: whenever a brief states a "one accent,
+one meaning" (or similarly absolute) rule, grep the stylesheet for every use
+of that custom property directly, rather than trusting a commit message's
+own claim about it or reasoning only about the UI surface the rule was
+originally framed around --- a second, incidental use is exactly the kind of
+thing that's easy to introduce in the same commit that states the rule and
+easy to miss on every subsequent read that starts from the rule's own
+framing instead of the code.
+
 ## Full-stack write-endpoint practice (crit 7)
 
 **The API boundary, not the HTML form, is where a full-stack deliverable's
