@@ -38,8 +38,9 @@ nav[aria-label="date"] {
 }
 
 .error {
-  border: 1px solid var(--seal);
-  color: var(--seal);
+  border: 1px solid var(--ink);
+  border-width: 2px;
+  color: var(--ink);
   padding: 0.6rem 0.8rem;
   border-radius: 0.25rem;
   font-size: 0.95rem;
