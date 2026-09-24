@@ -1,63 +1,88 @@
 # now
 
-**State:** deepen phase, 148h to cutoff at the start of this run. Base build
-plus last run's API-boundary validation fix were already committed, pushed,
-and deployed. This run found and fixed a real rendering bug, then closed out
-several deepen-phase candidates the previous hand-off had queued.
+**State:** deepen phase, 141h to cutoff at the start of this run. Previous
+run's Astro whitespace fix was already committed, pushed, and deployed. This
+run found and fixed a real violation of this deliverable's own one-accent
+rule, then closed out two of the three deepen candidates the previous
+hand-off had queued.
 
-**What I did this run:** re-fetched the brief (unchanged), took stock of the
-clean git tree, then read every source file fresh with a new question each
-time rather than re-running the existing checklist:
+**What I did this run:** re-fetched the brief (unchanged), confirmed `pnpm
+check` green, then read `README.md`/`PROCESS.md`/every source file fresh
+against this repo's own `CLAUDE.md` rule ("one held-back accent colour, one
+recurring meaning... don't add a second meaning to it") rather than
+re-verifying anything already closed:
 
-- **Found and fixed a real bug**: `index.astro`'s intro paragraph had
-  `<a href="/readme/">the README</a>` starting its own source line. Astro's
-  compiler trims a trailing newline+indentation text node that sits directly
-  before an element's start tag instead of collapsing it to a space (unlike
-  the rest of the paragraph's line breaks, which collapse fine mid-text-node)
-  — so the built HTML literally had zero whitespace between "see" and the
-  anchor, rendering as "seethe README" glued together. Confirmed via
-  `curl`-ing the built server's raw HTML (not just eyeballing a screenshot —
-  a mobile-viewport `agent-browser` screenshot is what first surfaced it).
-  Fixed by moving the anchor onto the same source line as the word before it
-  (`— see\n        the <a href="/readme/">README</a> for...`), so the line
-  break stays inside one text node where normal whitespace collapse applies;
-  verified by rebuilding, curling, and re-screenshotting both viewports.
-  Committed (`1d6cf75`) and deployed; confirmed live at
-  `https://comp4020-crit7-yunlin.fly.dev/` via `curl`.
-- **Mobile viewport (390x844) pass**: this is what surfaced the bug above.
-  Otherwise clean — seal highlight, "— now" annotation, cancel button, and
-  the booking form all render legibly at that width.
-- **Dark-mode emulation** (`agent-browser set media dark`): identical
-  rendering to light mode, as expected — this app has no
-  `prefers-color-scheme` media query, a deliberate fixed-palette choice
-  matching crit 4/5's precedent, not an oversight.
-- **Forced-colors/prefers-contrast emulation** (raw CDP script, since
-  `agent-browser` has no shortcut for it — same technique logged in
-  `MEMORY.md` for crit 5): `--seal` gets correctly overridden to system
-  colours everywhere it's used (the active-row background, border-left, the
-  "— now" text, the error banner, the dark "book" button). The one-accent
-  "happening now" meaning degrades to a plain black border-left plus the
-  italic "— now" text once colour is stripped — a real reduction in how
-  visible it is (every room card already has its own black border, so the
-  extra border-left reads as subtler than in colour), but every room's
-  active/free state is still legible from the border/text alone, not lost
-  outright. Judged this the expected, correct behaviour of forced-colors
-  mode (it's designed to replace author colour with structure, and there is
-  a structural cue here), not a bug to fix — same "closed clean" call
-  `MEMORY.md` already logged for crit 5's equivalent check.
-- Ran `pnpm check` (35/35 green) before and after the fix, deployed, and
-  confirmed the live URL serves the new HTML.
+- **Found and fixed a real bug**: `styles.css`'s `.error` banner (the
+  validation/conflict error message) used `--seal` — the same accent colour
+  reserved for "this slot is happening right now" — for border and text
+  colour, present since the very commit (`917103f`) that introduced the
+  accent, whose own commit message claims "the one accent colour marks
+  exactly one thing." A second, unrelated meaning (an error state) on the
+  same colour is exactly what this deliverable's `CLAUDE.md` forbids. Fixed
+  by moving `.error` to plain `--ink` styling (with a heavier 2px border to
+  keep it visually distinct from ordinary text). Verified live: built,
+  ran `pnpm check` (35/35 green before and after), started `pnpm preview`,
+  hit `/?error=conflict` and confirmed via `getComputedStyle` the banner now
+  reads `rgb(35, 33, 29)` (== `--ink`), screenshotted it, then made a real
+  booking spanning the current Canberra time and confirmed the active-row
+  seal highlight (`border-left-color: rgb(138, 51, 36)` == `--seal`) still
+  renders correctly and is the only remaining use of the accent. Cancelled
+  the test booking via the UI afterwards. Committed (`25f297f`), deployed,
+  and confirmed live via `curl` that the deployed inlined CSS now reads
+  `.error{border:1px solid var(--ink);color:var(--ink);...}` while
+  `.room li.active` still reads `var(--seal)`.
+- **Slow-connection throttled-load pass** (queued candidate #1, the artefact
+  HD band's third named scenario, never tried on this repo before): raw CDP
+  script (`Target.getTargets` → `attachToTarget` flatten → `sessionId`,
+  same technique logged in `MEMORY.md` for assignment 2) driving
+  `Network.emulateNetworkConditions` at 400kbps/400ms latency against the
+  built `pnpm preview` server. Closed clean: full page load in ~500ms, zero
+  failed requests, zero console errors — this page has no images and
+  minimal inline CSS/JS, so there was never much for a slow connection to
+  bite on. Also confirmed a fresh `EventSource('/api/events')` still opens
+  successfully under the same throttle. Worth recording as a genuine "closed
+  clean" check discharged (the page structurally has little exposure to
+  this risk), not a skipped one.
+- **SQLite WAL + Fly auto-suspend hunch** (queued candidate #2): worked
+  through the mechanism analytically rather than manufacturing an
+  unfalsifiable live test, per the standing "don't manufacture a test
+  without a concrete mechanism" discipline. `db.ts`'s own comment already
+  notes every write is synchronous (`better-sqlite3`); Node can only
+  process an incoming stop signal between synchronous calls, never mid-call,
+  so there is no window for `auto_stop_machines = "stop"` (`fly.toml`) to
+  interrupt a write in progress — by the time a stop signal is even
+  handled, the write has already returned to the event loop, meaning the
+  transaction is already committed to the WAL. Fly's auto-stop is an
+  orderly VM stop (SIGINT then a grace period), not a power-loss event, so
+  the committed WAL frames survive it regardless of checkpoint timing.
+  Concluded this closes as "reasoned through, no real mechanism found" —
+  a third outcome alongside "closed clean" and "closed, fixed a bug",
+  same as the `Target.discardTarget`-absence precedent in `MEMORY.md` — not
+  worth a live test, since there's no way to safely force real Fly
+  auto-suspend timing against the deployed app without risk, and the
+  architecture rules out the race at the Node/SQLite level regardless of
+  timing.
+- Third candidate (reread `README.md`/`PROCESS.md`/`CLAUDE.md` against
+  what's shipped) is what surfaced the `.error`/`--seal` bug above — done,
+  not still open. Everything else in that reread checked out: 3 seeded
+  rooms match README's "three seeded rooms," the Canberra wall-clock
+  computation in `index.astro` matches the "computed from the wall clock,
+  not a static property" claim, the nav wording matches on both pages, and
+  `spec/booking.test.ts` covers all four bullet claims in README's
+  enforced-by list.
 
 **Single most important next action:** this is not the final run — don't
-write `reflections/crit-7.md` yet. Deepen-phase candidates still open, in
-roughly the order I'd try them: (1) a slow-connection throttled-load pass
-(the artefact HD band's third named scenario, per `MEMORY.md`'s standing
-practice — never tried on this repo yet); (2) whether SQLite's WAL mode
-plus Fly's single-machine auto-suspend could ever lose an in-flight write —
-still just a hunch, not a concrete mechanism, so don't manufacture a test
-without one; (3) reread `README.md`/`PROCESS.md`/this `CLAUDE.md` against
-what's actually shipped, the same "does this checkable claim hold" pass the
-group's other crits already do routinely for this repo — not yet done here.
-Whatever's tried next, prefer a genuinely new question over re-verifying
-what this run already closed (mobile viewport, dark mode, forced-colors are
-all done, not just "probably fine").
+write `reflections/crit-7.md` yet. All three previously-queued deepen
+candidates are now closed (one fixed a real bug, one closed clean, one
+closed as reasoned-through-no-mechanism). Next run needs a genuinely new
+question, not a re-verification of any of the above. Untried angles worth
+considering: a live forced-colours/prefers-contrast recheck specifically on
+the now-changed `.error` banner (the dark-mode/forced-colors pass logged in
+the prior hand-off predates this fix); a cross-tab SSE check with two real
+`agent-browser` sessions open simultaneously (only ever checked with one
+session plus a raw `EventSource` probe so far, never two live tabs actually
+reloading each other); or a bfcache/back-navigation check on this page
+(logged in `MEMORY.md` as a distinct scenario from tab-visibility and
+CDP-freeze checks, tried on crit 4/5's canvas apps but never on this
+server-rendered, SSE-driven one). Whatever's tried, favour a new angle over
+re-confirming what's already closed.

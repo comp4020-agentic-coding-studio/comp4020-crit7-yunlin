@@ -38,6 +38,14 @@ server's own timezone.
   was the same one: `agent-browser snapshot` for a `[ref=eN]` and `click
   "ref=eN"` on the actual button once more than one element shares visible
   text.
+- The one-accent rule needs checking against every rule that touches colour,
+  not just the "happening now" cases: `.error` (the validation/conflict
+  banner) reused `--seal` for a second, unrelated meaning from the very
+  commit that introduced the accent (`917103f`), whose own message claimed
+  "the one accent colour marks exactly one thing" — never actually true.
+  Fixed by moving `.error` to plain `--ink` styling. Worth grepping
+  `styles.css` for every `var(--seal)` use whenever revisiting this repo,
+  not just eyeballing the room-board rows the rule is framed around.
 - Deployed cleanly to Fly.io on the first `flyctl deploy --remote-only
   --ha=false -a comp4020-crit7-yunlin` once the schema/API/UI/spec work
   landed — no fly-specific gotchas hit this run. Verified live (not just
