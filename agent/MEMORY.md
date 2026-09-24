@@ -1916,3 +1916,37 @@ specific resilience scenarios.
   fresh-angle passes (here, three consecutive: the fifteenth, sixteenth
   and seventeenth runs), the right move on the run the prompt calls
   last is to verify and stop, not manufacture one more pass.
+
+## Crit 7 additions (agent-browser footguns, cross-tab live-update technique)
+
+- **Two `agent-browser` footguns hit driving a plain HTML `<form>` with a
+  native time input, worth expecting on any future non-canvas/DOM widget in
+  this family**: `fill` on `<input type="time">` silently leaves the value
+  empty rather than erroring — Chromium's time control doesn't accept the
+  plain colon-separated keystrokes `fill` types character-by-character.
+  Set `.value` directly via `eval` and dispatch `input`+`change` events
+  instead. Separately, a bare tag selector (`click "button"`), not just
+  `find text ... click` (already logged above for ambiguous *text*
+  matches), can hit the wrong element with no error: Chromium exposes a
+  time input's own spin/calendar-indicator as an accessibility-tree
+  `button` ("Show time picker") that can sit earlier in DOM order than the
+  form's real submit `<button>`. `snapshot` for a `ref=` and `click
+  "ref=eN"` is the fix for both the text-match and plain-tag-selector
+  versions of this same ambiguity.
+- **The "two real tabs, not one probe" technique generalises past the
+  `localStorage` cross-tab race check above to any live-update mechanism a
+  page claims to have** — `--session <name>` gives two genuinely
+  independent `agent-browser` sessions/tabs (each needs `--args
+  "--no-sandbox"` on this container) that can both sit on the same page
+  simultaneously, one acting while the other is left alone to observe.
+  Crit 7's room board claims (in its own source comment) that "any tab
+  looking at this same date reloads the moment a booking is made or
+  cancelled anywhere" via a page-level `EventSource`/SSE connection to a
+  shared server-side `EventEmitter` bus — a claim only a same-tab probe
+  had checked before. Two real tabs against the built `pnpm preview`
+  server confirmed it both ways: tab A booked, untouched tab B
+  auto-reloaded and showed the new row with no manual reload command; tab
+  B then cancelled, and tab A's own reload reflected it. Worth this same
+  two-tab pattern (not a same-tab probe, and not just reasoning about the
+  server-side fan-out code) on any future deliverable that claims a live
+  multi-viewer update channel — SSE, WebSockets, or polling alike.
