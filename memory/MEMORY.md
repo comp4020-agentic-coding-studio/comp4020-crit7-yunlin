@@ -111,3 +111,51 @@ server's own timezone.
   file. Worth deleting the entire directory (or all three `.db`/`.db-wal`/
   `.db-shm` files together) whenever resetting a scratch SQLite DB for a
   live check in this repo, not just the main file.
+- **A CDP `Page.setWebLifecycleState("frozen")`/`"active"` freeze-thaw cycle
+  on this SSE page checked clean, the same technique used on crit 4/5's
+  canvas apps, never yet tried on a server-rendered SSE page.** Attached to
+  the built `pnpm preview` server's page target over the raw CDP websocket,
+  injected a `window.__marker`, froze the page, made a real booking via a
+  plain `fetch` POST (needs an `Origin` header matching the server or
+  Astro's own CSRF check 403s it — no browser context to supply one
+  automatically), waited, thawed, forced a frame with
+  `Page.captureScreenshot` (the standing headless rAF/deferred-notification
+  quirk applies here too), then read state: `window.__marker` came back
+  `undefined` (proof a real `location.reload()` fired, not a stale read)
+  and the new booking rendered correctly, console clean throughout. Also
+  checked **forced-colors/`prefers-contrast`** via
+  `Emulation.setEmulatedMedia({features: [{name: "forced-colors", value:
+  "active"}]})` (no `agent-browser set media` shortcut for this one either)
+  against the now-fixed `.error` banner: it and the rest of the page
+  correctly flip to system colours (`CanvasText`/`Canvas`/`LinkText`), since
+  nothing opts out with `forced-color-adjust: none`. Both closed clean —
+  no fix needed, but worth recording alongside the fixes below since they
+  closed out the two angles the prior hand-off had queued.
+- **The "happening now" highlight is computed once per server render and
+  nothing on the page re-checks the wall clock afterwards — a tab left open
+  across a booking's start or end minute kept showing that render's stale
+  answer forever, unless some other tab's booking happened to trigger the
+  existing SSE reload first.** This directly broke the crit's own "one
+  accent, one meaning: computed from a live value" rule and the README's
+  literal claim ("the red highlight … means exactly one thing: this slot is
+  happening right now") the moment a tab sat open past a boundary with no
+  other activity on that date. Found by booking a slot ending ~2 minutes
+  out against the built preview server, confirming `.room li.active` was
+  true, then waiting (no reload) past the end time and reading the DOM
+  again with no interaction: still showing active, only clearing on a
+  manual reload. Fixed by computing, server-side, the number of minutes
+  until the next booking start/end boundary today (`src/lib/clock.ts`'s
+  pure `nextBoundaryDelayMinutes`, unit-tested in `spec/clock.test.ts`) and
+  scheduling exactly one client-side `setTimeout(() => location.reload(),
+  delay*60_000 + 5_000)` for it — no polling interval, and no client-side
+  timezone handling needed since the delay is plain minute arithmetic
+  computed against the server's own Canberra-clock `nowTime`. Re-verified
+  live against both the local preview and the deployed Fly app after
+  shipping: booked a slot, confirmed `nextBoundaryDelay` in the served HTML
+  and the active highlight, then (locally) let the scheduled timer fire
+  with zero manual interaction and confirmed the highlight cleared itself
+  and the console stayed clean. General lesson for this repo: any future
+  change to the "happening now" logic needs to be checked by leaving a tab
+  open across a real boundary crossing, not just checking the compute
+  function returns the right answer for a fixed instant — the bug was
+  never in the comparison logic, only in never re-running it.
