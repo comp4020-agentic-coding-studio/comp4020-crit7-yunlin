@@ -1,5 +1,5 @@
 ---
-import { nextBoundaryDelayMinutes } from "../lib/clock";
+import { nextReloadDelayMinutes } from "../lib/clock";
 import { listBookingsForDate, listRooms } from "../lib/db";
 import "../styles.css";
 
@@ -55,10 +55,11 @@ const roomsWithBookings = rooms.map((room) => ({
 }));
 
 // Passed to the client script below so a tab left open across a booking's
-// start/end minute reloads itself right then, instead of only when some
-// other tab's booking happens to trigger the SSE reload.
+// start/end minute — or across midnight, with no bookings left to wait for
+// today — reloads itself right then, instead of only when some other tab's
+// booking happens to trigger the SSE reload.
 const nextBoundaryDelay = isToday
-  ? nextBoundaryDelayMinutes(nowTime, bookingsForDate.flatMap((b) => [b.startTime, b.endTime]))
+  ? nextReloadDelayMinutes(nowTime, bookingsForDate.flatMap((b) => [b.startTime, b.endTime]))
   : null;
 ---
 
@@ -159,14 +160,17 @@ const nextBoundaryDelay = isToday
         if (payload.date === date) location.reload();
       });
 
-      // The other half of "live": the "happening now" highlight is computed
-      // once, at render time. With no other tab ever booking or cancelling
-      // anything today, this tab would otherwise keep showing that render's
-      // answer forever, even long after the slot it highlights has ended.
-      // `nextBoundaryDelay` (minutes to the next booking start/end today) is
-      // computed server-side in plain Canberra-clock minute arithmetic — no
-      // client-side timezone handling needed — so this only ever fires once,
-      // right when the page's own answer would go stale.
+      // The other half of "live": the "happening now" highlight and the
+      // date-nav's "(today)" label are both computed once, at render time.
+      // With no other tab ever booking or cancelling anything today, this
+      // tab would otherwise keep showing that render's answer forever —
+      // past the end of a highlighted slot, or past midnight into a day
+      // this render was never "today" for. `nextBoundaryDelay` (minutes to
+      // the next booking start/end today, or to midnight if nothing's left
+      // to wait for) is computed server-side in plain Canberra-clock minute
+      // arithmetic — no client-side timezone handling needed — so this
+      // fires exactly once, right when the page's own answer would go
+      // stale, and always within 24h even on a day with no bookings at all.
       if (nextBoundaryDelay !== null) {
         setTimeout(() => location.reload(), nextBoundaryDelay * 60_000 + 5_000);
       }
