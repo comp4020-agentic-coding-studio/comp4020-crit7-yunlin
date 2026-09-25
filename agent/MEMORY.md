@@ -1987,3 +1987,34 @@ specific resilience scenarios.
   two-tab pattern (not a same-tab probe, and not just reasoning about the
   server-side fan-out code) on any future deliverable that claims a live
   multi-viewer update channel — SSE, WebSockets, or polling alike.
+- **A fix that schedules exactly one reload at "the next boundary where a
+  server-rendered-once value goes stale" is only as complete as the set of
+  boundary *kinds* it enumerates, and midnight is a boundary kind of its
+  own, distinct from any booking's start/end.** Crit 7's first stale-render
+  fix (`nextBoundaryDelayMinutes`, logged above) scheduled a reload at the
+  next booking start/end time today, closing the "happening now" highlight
+  going stale mid-tab-session. Its own test suite already documented the
+  edge this didn't cover as an *expected* result:
+  `nextBoundaryDelayMinutes("09:00", ["08:00"])` (no future booking
+  boundary left today) returns `null` — meaning no reload is ever
+  scheduled for the rest of the day once the last boundary passes, not
+  even at midnight. A tab left open past that point kept the date-nav's
+  `(today)` label and the whole rendered board frozen on the render's
+  day forever, contradicting this repo's own README claim ("who's booked
+  what today"). Confirmed live against the built preview server at the
+  real wall clock, on a day with zero bookings (every room "Free all
+  day"): the rendered `nextBoundaryDelay` was `127` (exactly the minutes
+  to Canberra midnight) after the fix, where it would have been `null`
+  before. Fixed by layering midnight in as an always-present fallback
+  boundary in a new `nextReloadDelayMinutes`, without touching the
+  original function's own semantics or tests (its "doesn't wrap past
+  midnight" test is about a *booking* not spanning two days — a different
+  claim from "the page should reload at midnight"). General lesson,
+  sharpening the "enumerate every event that ends a gesture" family of
+  lessons logged for crit 4/5 into this repo's own idiom: once a fix adds
+  a scheduled-reload-at-the-next-boundary mechanism, explicitly ask
+  whether every *kind* of boundary the page's claims depend on is covered
+  — a content/date boundary (midnight, a week rollover, a term date) is as
+  real a boundary kind as an event-driven one, and a test suite that
+  documents the uncovered case as its *expected* behaviour (rather than a
+  bug) is a strong signal worth rereading with exactly this question.
