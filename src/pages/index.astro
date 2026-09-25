@@ -1,4 +1,5 @@
 ---
+import { nextBoundaryDelayMinutes } from "../lib/clock";
 import { listBookingsForDate, listRooms } from "../lib/db";
 import "../styles.css";
 
@@ -52,6 +53,13 @@ const roomsWithBookings = rooms.map((room) => ({
     .filter((b) => b.roomId === room.id)
     .map((b) => ({ ...b, active: isNowWithin(b.startTime, b.endTime) })),
 }));
+
+// Passed to the client script below so a tab left open across a booking's
+// start/end minute reloads itself right then, instead of only when some
+// other tab's booking happens to trigger the SSE reload.
+const nextBoundaryDelay = isToday
+  ? nextBoundaryDelayMinutes(nowTime, bookingsForDate.flatMap((b) => [b.startTime, b.endTime]))
+  : null;
 ---
 
 <!doctype html>
@@ -139,7 +147,7 @@ const roomsWithBookings = rooms.map((room) => ({
         <button>Book {date}</button>
       </form>
     </main>
-    <script is:inline define:vars={{ date }}>
+    <script is:inline define:vars={{ date, nextBoundaryDelay }}>
       // The board's live half: any tab looking at this same date reloads the
       // moment a booking is made or cancelled anywhere, so two people looking
       // at the same day never work from stale information. The form itself
@@ -150,6 +158,18 @@ const roomsWithBookings = rooms.map((room) => ({
         const payload = JSON.parse(event.data);
         if (payload.date === date) location.reload();
       });
+
+      // The other half of "live": the "happening now" highlight is computed
+      // once, at render time. With no other tab ever booking or cancelling
+      // anything today, this tab would otherwise keep showing that render's
+      // answer forever, even long after the slot it highlights has ended.
+      // `nextBoundaryDelay` (minutes to the next booking start/end today) is
+      // computed server-side in plain Canberra-clock minute arithmetic — no
+      // client-side timezone handling needed — so this only ever fires once,
+      // right when the page's own answer would go stale.
+      if (nextBoundaryDelay !== null) {
+        setTimeout(() => location.reload(), nextBoundaryDelay * 60_000 + 5_000);
+      }
     </script>
   </body>
 </html>
