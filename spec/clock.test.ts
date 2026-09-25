@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nextBoundaryDelayMinutes, nextReloadDelayMinutes } from "../src/lib/clock";
+import { minutesUntilMidnight, nextBoundaryDelayMinutes, nextReloadDelayMinutes } from "../src/lib/clock";
 
 // Caught live, against the running app, before this existed: the "happening
 // now" highlight is computed once per render, so a tab left open across a
@@ -44,5 +44,20 @@ describe("nextReloadDelayMinutes", () => {
 
   it("still finds midnight even on a full day with a passed booking", () => {
     expect(nextReloadDelayMinutes("23:50", ["00:10"])).toBe(10);
+  });
+});
+
+// A tab parked on *tomorrow*'s date view (isToday false) never scheduled a
+// reload at all before this existed — nextBoundaryDelay was unconditionally
+// null for any non-today view — so real midnight arriving, and that date
+// becoming today, would never switch on its "(today)" label or live
+// highlighting without a manual reload or another tab's SSE-triggered one.
+// See src/pages/index.astro's nextBoundaryDelay for the "view is exactly
+// tomorrow" branch this feeds.
+describe("minutesUntilMidnight", () => {
+  it("counts the minutes left in the day", () => {
+    expect(minutesUntilMidnight("09:00")).toBe(15 * 60);
+    expect(minutesUntilMidnight("23:50")).toBe(10);
+    expect(minutesUntilMidnight("00:00")).toBe(24 * 60);
   });
 });

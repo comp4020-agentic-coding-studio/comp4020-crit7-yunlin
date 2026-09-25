@@ -17,6 +17,13 @@ export function nextBoundaryDelayMinutes(nowTime: string, boundaries: string[]):
   return future.length > 0 ? Math.min(...future) - now : null;
 }
 
+// Shared with index.astro directly for a tab parked on *tomorrow*'s date
+// view — the one boundary such a tab needs is the moment that date stops
+// being tomorrow and becomes today.
+export function minutesUntilMidnight(nowTime: string): number {
+  return 24 * 60 - toMinutes(nowTime);
+}
+
 // A tab can be left open on a day with no booking boundaries left to wait
 // for (the last one already passed, or there were never any today) — in
 // which case nextBoundaryDelayMinutes alone schedules nothing, and the
@@ -25,8 +32,7 @@ export function nextBoundaryDelayMinutes(nowTime: string, boundaries: string[]):
 // finds a reload time within the next 24h by treating midnight itself as a
 // boundary, so the day rolls over on its own even with nothing booked.
 export function nextReloadDelayMinutes(nowTime: string, boundaries: string[]): number {
-  const now = toMinutes(nowTime);
-  const untilMidnight = 24 * 60 - now;
   const bookingDelay = nextBoundaryDelayMinutes(nowTime, boundaries);
+  const untilMidnight = minutesUntilMidnight(nowTime);
   return bookingDelay === null ? untilMidnight : Math.min(bookingDelay, untilMidnight);
 }
