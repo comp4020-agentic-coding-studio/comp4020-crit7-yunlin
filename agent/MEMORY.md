@@ -2018,3 +2018,57 @@ specific resilience scenarios.
   real a boundary kind as an event-driven one, and a test suite that
   documents the uncovered case as its *expected* behaviour (rather than a
   bug) is a strong signal worth rereading with exactly this question.
+- **The same boundary-enumeration question has a second, symmetric edge:
+  a page whose "isToday" comparison is date-nav-navigable, not just
+  render-time-fixed, needs the reload scheduled for the view that is
+  *about to become* today, not only the view that already is.** A
+  follow-up run on the midnight-rollover fix above asked whether a tab
+  parked on `/?date=<tomorrow>` (an explicit forward date-nav click, left
+  open) ever picks up its date becoming today once real midnight passes.
+  `nextBoundaryDelay` was unconditionally `null` for any `!isToday` view,
+  so no reload was ever scheduled — confirmed live against the built
+  preview server (curl'd the rendered `const nextBoundaryDelay = null;`
+  for a `?date=` one day ahead before touching anything). Fixed by
+  extracting `minutesUntilMidnight` out of `nextReloadDelayMinutes` (same
+  arithmetic, no behaviour change to the existing function/tests) and
+  adding a branch in `index.astro`: when the viewed date is exactly
+  tomorrow, schedule a reload at `minutesUntilMidnight`; any date further
+  out still gets `null`, since nobody parks a tab days ahead waiting for
+  it to become today. Confirmed live before and after on the built
+  preview server (`nextBoundaryDelay` went from `null` to matching
+  minutes-to-midnight for the tomorrow view; a two-days-out view stayed
+  `null`), then deployed and reconfirmed against the live Fly URL.
+  General lesson: once a "reload at the next boundary" fix exists for the
+  *default* (today, no explicit date) view, check whether the same page
+  has *other* views of the same underlying data (a date-nav step, a
+  filter, a saved link) that could similarly transition into matching the
+  live-highlighting condition over time — the fix for the default view
+  doesn't cover them automatically just because they render the same
+  component.
+- **When a brief's `related` list names a `-retro` crit, fetch that
+  crit's own page text before assuming the doctrine's general "PROCESS.md
+  must carry the breakthrough" rule applies to *this* repo's file** — it
+  can instead be about a different, already-completed deliverable.
+  Crit 7's `related` list includes `crits/06-a2-retro`; fetching it
+  showed its own text is explicit that "the breakthrough comes from the
+  `PROCESS.md` you submitted with Assignment 2" — a past assignment, not
+  this crit. The retro already presented from that file; nothing about
+  crit 7's own `PROCESS.md` needed a before/after breakthrough framing on
+  this basis. Extends the same lesson already logged for assignment 2
+  (fetch the linked retro's literal wording rather than trusting the
+  general rule) with the opposite outcome: there, the fetch narrowed what
+  the rule demanded; here, it ruled the rule out entirely for this repo.
+  Worth treating "checked, doesn't apply here" as a distinct, valid
+  outcome of this check — not a reason to skip making the check.
+- Multiple unrelated projects in this shared multi-project sandbox can
+  already hold ports in the same low-4000s range a freshly built preview
+  server binds to by default (this run's `PORT=4399`/`4501` first
+  attempts landed on an already-running "AI Tracker" project's page, with
+  an identical byte-for-byte-sized response at two different guessed
+  ports — the giveaway wasn't the port number, it was the response's own
+  `<title>` reading something other than "Room board"). `ss -ltnp` to find
+  a genuinely free port, then checking the response's own `<title>`/
+  distinguishing content before trusting a curl result, is the reliable
+  sequence — extends the standing "PID-then-path" port-collision lesson
+  logged for assignment 2 with a cheaper, curl-only version of the same
+  check for whenever a full `ps`-based investigation isn't warranted.
