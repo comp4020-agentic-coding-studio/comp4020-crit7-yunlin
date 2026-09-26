@@ -152,6 +152,73 @@ describe("booking the same slot from multiple requests at once", () => {
   });
 });
 
+// cancelBooking (src/lib/db.ts) is the same no-await-in-between shape as
+// addBooking, so the same live-concurrency discipline applies to it: don't
+// trust "it's a single synchronous statement, so it must be race-free" by
+// analogy alone, drive it with genuinely concurrent requests instead.
+describe("cancelling the same booking from multiple requests at once", () => {
+  const date = "2031-07-21";
+  let bookingId: number;
+
+  beforeAll(async () => {
+    await post(
+      "/api/bookings",
+      new URLSearchParams({ date, roomId: "2", startTime: "16:00", endTime: "17:00", bookedBy: "double cancel" }),
+    );
+    const rows = await roomsPage(date);
+    const match = rows.match(/\/api\/bookings\/(\d+)\/cancel/);
+    if (!match) throw new Error("couldn't find the booking's cancel form");
+    bookingId = Number(match[1]);
+  });
+
+  it("leaves the booking cancelled exactly once, with no error from any request", async () => {
+    const attempts = [1, 2, 3, 4, 5].map(() => post(`/api/bookings/${bookingId}/cancel`, new URLSearchParams({ date })));
+    const results = await Promise.all(attempts);
+    for (const res of results) expect(res.status).toBe(303);
+
+    const page = await roomsPage(date);
+    expect(page).not.toContain("double cancel");
+    expect(page).toContain("Free all day");
+  });
+});
+
+// A cancel and a new overlapping booking racing each other is the other
+// half of the same claim: cancelling always succeeds (given a real id), so
+// whichever way the two requests interleave, the freed slot's original
+// occupant must be gone, and the new booking must be there exactly when its
+// own check lost the race (no error) — never both, and never a silent loss
+// where neither ever explains what happened.
+describe("cancelling a booking while a new overlapping booking races it", () => {
+  it("never leaves the original booking behind, and the new one lands iff it wasn't rejected", async () => {
+    for (let i = 0; i < 8; i++) {
+      const date = `2031-08-${String(10 + i).padStart(2, "0")}`;
+      await post(
+        "/api/bookings",
+        new URLSearchParams({ date, roomId: "1", startTime: "11:00", endTime: "12:00", bookedBy: "original" }),
+      );
+      const rows = await roomsPage(date);
+      const match = rows.match(/\/api\/bookings\/(\d+)\/cancel/);
+      if (!match) throw new Error("couldn't find the booking's cancel form");
+      const id = Number(match[1]);
+
+      const [cancelRes, bookRes] = await Promise.all([
+        post(`/api/bookings/${id}/cancel`, new URLSearchParams({ date })),
+        post(
+          "/api/bookings",
+          new URLSearchParams({ date, roomId: "1", startTime: "11:30", endTime: "12:30", bookedBy: "racer" }),
+        ),
+      ]);
+      expect(cancelRes.status).toBe(303);
+      expect(bookRes.status).toBe(303);
+
+      const page = await roomsPage(date);
+      expect(page).not.toContain("original");
+      const racerWon = !(bookRes.headers.get("location") ?? "").includes("error");
+      expect(page.includes("racer")).toBe(racerWon);
+    }
+  });
+});
+
 // The room dropdown and time inputs only ever send well-formed values, but
 // nothing stops a request from skipping the form entirely (this file's own
 // `post` helper does) — the write endpoint has to reject what the browser
