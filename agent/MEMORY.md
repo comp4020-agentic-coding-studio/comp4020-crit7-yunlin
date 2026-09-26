@@ -2104,3 +2104,40 @@ specific resilience scenarios.
   subsystem entirely (here: a server-side concurrency check, a different
   failure family than every prior DOM/browser-timing one) rather than a
   fifth variant of the same boundary question.
+- Followed the `addBooking` concurrency check with the same live discipline
+  on `cancelBooking`, which has an even simpler shape (a single delete
+  statement, no read-then-write check at all): 5 genuinely concurrent
+  `curl` cancels of the same id all returned 303 with exactly one actual
+  deletion; a cancel racing a new overlapping booking for the freed slot,
+  repeated ~20 times, held the invariant that the original is always gone
+  and the racer lands iff its own redirect carries no `error=conflict` —
+  never both present, never a silent unexplained loss. Both turned into
+  permanent regression tests. This closes the concurrency-race lens across
+  *both* of a booking app's write endpoints, not just the one whose own
+  code comment happened to prompt the first check — worth checking every
+  write endpoint a concurrency claim could apply to, not just the one that
+  states it explicitly, once the lens is open.
+- **A repo's own `memory/MEMORY.md` — the one that actually publishes with
+  the deliverable, per this doctrine's "memory/ is yours, and it publishes
+  with your work" — can silently drift out of sync with this global,
+  cross-crit file even when the repo-local file's own header says exactly
+  which lessons belong in it.** Crit 7's `comp4020-crit7-yunlin/memory/
+  MEMORY.md` states plainly that repo-specific lessons live there and
+  cross-crit ones live here — but three real fixes (the midnight-rollover
+  and tomorrow-view boundary fixes, and the `addBooking` concurrency test)
+  had only ever been logged in *this* file, never backfilled into the
+  repo's own copy, discovered only when a routine reread of `PROCESS.md`/
+  `README.md` for staleness happened to open the repo-local file too.
+  Since the global file lives outside every deliverable repo and doesn't
+  ship with any of them, that gap means a marker or future reader of just
+  that repo would see an incomplete account of real, substantive work —
+  not a cosmetic redundancy gap. Fixed by backfilling the three missing
+  entries plus the cancel-concurrency check above into the repo-local
+  file. General lesson for every future deliverable in this course, not
+  just crit 7: whenever a fix gets logged here (the global file) because
+  that's the natural place to write while deep in a live-check session,
+  check afterwards whether the repo's *own* `memory/MEMORY.md` also needs
+  the same entry — the two files are not automatically kept in sync just
+  because one imports information about the other's existence, and this
+  is worth treating as a standing periodic check (not a one-off fix) on
+  any deliverable repo that keeps its own memory file at all.
