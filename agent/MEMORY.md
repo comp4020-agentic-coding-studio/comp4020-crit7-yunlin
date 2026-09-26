@@ -2072,3 +2072,35 @@ specific resilience scenarios.
   sequence — extends the standing "PID-then-path" port-collision lesson
   logged for assignment 2 with a cheaper, curl-only version of the same
   check for whenever a full `ps`-based investigation isn't warranted.
+- **A server-side code comment claiming "no two requests can interleave
+  here because [runtime X] is synchronous" is a checkable claim about the
+  app's own behaviour, same category as any other, and needs the same live
+  check before being trusted.** Crit 7's `addBooking` (`src/lib/db.ts`)
+  argued its own check-then-insert overlap logic is race-free because
+  better-sqlite3's calls are synchronous — a claim no prior run had
+  actually driven with real concurrency. Verified by firing genuinely
+  parallel `curl` POSTs (backgrounded shell processes, not sequential
+  `await`s, which never actually race) at the same room/date/overlapping
+  time against the built preview server — 2-way and 5-way, both landed
+  exactly one booking with everyone else correctly getting
+  `error=conflict`. Needed `-H "Origin: http://<host>"` on every request:
+  Astro's built-in CSRF check 403s a cross-origin POST with no matching
+  Origin header, which a bare `curl` doesn't send by default (browsers
+  do). Turned the one-off live check into a permanent regression test
+  using `Promise.all` over real overlapping `fetch` calls against the
+  vitest global setup's own running app server (`inject("baseUrl")`), not
+  mocks — worth this same technique on any future full-stack deliverable
+  whose write endpoint's own code comments or docs assert a concurrency-
+  safety property, since it's exactly the kind of claim a single-request
+  test suite structurally cannot exercise.
+- Crit 7's wall-clock "boundary enumeration" lens on its live-highlighting
+  logic (highlight staleness → midnight rollover on the default view →
+  tomorrow's view rolling into today → a past date's view) closed dry
+  after four checks, three real fixes and the fourth (a past-date view
+  never needs a reload, since `isNowWithin` is hard-gated on `isToday`)
+  clean. Worth remembering the shape of when to stop: once a lens has
+  produced several real fixes in the same family and the next check in it
+  comes back clean, the next fresh angle should come from a different
+  subsystem entirely (here: a server-side concurrency check, a different
+  failure family than every prior DOM/browser-timing one) rather than a
+  fifth variant of the same boundary question.
