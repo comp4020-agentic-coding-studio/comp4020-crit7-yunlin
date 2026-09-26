@@ -211,3 +211,40 @@ server's own timezone.
   open across a real boundary crossing, not just checking the compute
   function returns the right answer for a fixed instant — the bug was
   never in the comparison logic, only in never re-running it.
+- **The SSE stream carries no state of its own and has no Last-Event-ID
+  replay, so any booking/cancellation broadcast while a client's
+  `EventSource` connection is down is silently lost forever until some
+  unrelated future event for the same date happens to arrive, or a
+  boundary-timer (up to ~24h out) fires.** A dropped connection isn't a
+  hypothetical here --- it's exactly what happens on every Fly.io deploy
+  restart, an expected, routine occurrence for this app. Confirmed live:
+  built against a scratch DB, opened a real tab, killed and restarted the
+  actual server process (not a CDP-simulated offline toggle --- tried that
+  first and found CDP's `Network.emulateNetworkConditions({offline:
+  true})` does *not* sever an already-open SSE connection, a genuine
+  methodology finding worth keeping in mind for future live checks), made
+  a booking during the outage window, and watched the reconnected tab's
+  own re-render not show it (only visible by curling with the booking's
+  actual date explicitly, since a UTC-computed test-script date was one
+  day behind the app's Canberra-clock "today" at the time of testing ---
+  not an app bug, a test-script artifact). Fixed by reloading on every SSE
+  `"open"` event after the first (`open` fires on reconnect as well as
+  initial connect) in `index.astro`'s inline script --- the only safe
+  assumption once reconnected is that something might have changed while
+  disconnected. Verified twice live: once demonstrating the bug (event
+  genuinely lost across a real kill/restart), once demonstrating the fix
+  via a `window` marker that verifiably vanished (proof a real navigation
+  fired) within seconds of reconnecting. Locked in with
+  `spec/live-updates.test.ts`, which actually runs the shipped inline
+  script in jsdom (`runScripts: "dangerously"` + a `beforeParse` hook
+  swapping in a `FakeEventSource`) rather than just grepping for a code
+  string --- confirmed it fails without the fix via a temporary `git
+  stash`. jsdom's `Location.reload` is non-configurable like real
+  Chrome's, so the test counts reload calls indirectly via
+  `VirtualConsole`'s `"jsdomError"` event (jsdom reports every call to an
+  unimplemented navigation API this way), filtered for messages
+  containing "navigation" --- worth this technique for any future jsdom
+  test needing to spy on a call to `location.reload`/`.assign`/`.href`
+  without redefining the property directly. Committed and deployed
+  (`de4732c`); confirmed live at both marking viewports post-deploy,
+  console clean, no fix needed beyond this.
