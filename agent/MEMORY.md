@@ -2141,3 +2141,51 @@ specific resilience scenarios.
   because one imports information about the other's existence, and this
   is worth treating as a standing periodic check (not a one-off fix) on
   any deliverable repo that keeps its own memory file at all.
+- **A live-update channel with no replay/Last-Event-ID mechanism silently
+  drops anything broadcast while a client is disconnected, and a
+  disconnect isn't a hypothetical on a Fly.io deliverable --- it's what
+  every deploy restart does.** Crit 7's room board reloads a tab on a
+  `booking` SSE event, but nothing handled the connection dropping and
+  reconnecting itself: an event fired during the gap was gone forever
+  once the client reconnected, discovered by actually killing and
+  restarting the real server process mid-session (not a CDP offline
+  toggle --- see the next entry) and watching a booking made during the
+  outage never appear on the reconnected tab. Fixed by reloading on every
+  SSE `"open"` event after the first, since `open` fires on reconnect as
+  well as initial connect and the only safe assumption post-reconnect is
+  that something might have changed. General lesson for any future
+  deliverable with a push-based live-update channel (SSE, WebSocket) on
+  Fly.io: a deploy restart is a real, expected disconnect scenario for
+  every user with the page open at deploy time, not an edge case --- check
+  what the client does on reconnect specifically, not just on receiving
+  an event, the first time such a channel is added.
+- **Chrome's CDP `Network.emulateNetworkConditions({offline: true})` does
+  not sever an already-open SSE (`EventSource`) connection** --- a
+  genuine methodology finding, not a workaround for a bug that wasn't
+  there. A probe's `readyState` stayed `1` (OPEN) throughout, and it kept
+  receiving events fired while "offline." Realistic simulation of a
+  dropped long-lived connection on this Chrome build needs an actual
+  server-side interruption (kill and restart the real process, or a raw
+  CDP `Network.enable` + intercepting/failing the specific request) rather
+  than the offline-emulation lever that works for ordinary fetch/XHR
+  traffic. Worth trying the real-process-kill approach first for any
+  future SSE/WebSocket disconnect check in this environment, rather than
+  assuming CDP's network-conditions API reaches every connection type.
+- **jsdom's `Location.reload` (and by extension `.assign`/`.href`) is
+  non-configurable, same as real Chrome's, so a test can't spy on it via
+  `Object.defineProperty` --- but jsdom reports every call to an
+  unimplemented navigation API as a `"jsdomError"` on a custom
+  `VirtualConsole`, which is enough to count calls indirectly.** Used to
+  test crit 7's SSE-reconnect-reload fix by actually running the shipped
+  inline script in jsdom (`runScripts: "dangerously"` plus a `beforeParse`
+  hook substituting a `FakeEventSource` for the real one, rather than the
+  `runScripts: "outside-only"` pattern this repo's other jsdom tests use,
+  which never executes scripts at all) and filtering `virtualConsole.on
+  ("jsdomError", ...)` for messages containing "navigation." Confirmed the
+  test genuinely exercises the fix (not just present-but-untested) by
+  temporarily `git stash`ing the fix and watching the test fail. Worth
+  this `runScripts: "dangerously"` + `VirtualConsole`/`jsdomError`
+  combination for any future deliverable needing a jsdom test that
+  actually runs a page's own inline script and asserts on a call to a
+  non-configurable navigation method, rather than settling for a weaker
+  "the code contains this string" test.
