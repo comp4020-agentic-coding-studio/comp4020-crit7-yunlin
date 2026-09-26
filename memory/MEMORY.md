@@ -131,6 +131,58 @@ server's own timezone.
   nothing opts out with `forced-color-adjust: none`. Both closed clean —
   no fix needed, but worth recording alongside the fixes below since they
   closed out the two angles the prior hand-off had queued.
+- **Fixing the "computed once per render" staleness bug (below) only closes
+  the boundary case where a tab is parked on *today's* view; the same page
+  has two other views of the same live-highlighting condition, and each
+  needed its own check.** With no bookings left today, `nextBoundaryDelay`
+  returned `null` — the test suite's own documented expected result for
+  that case — meaning a tab left open past the last boundary of the day
+  never reloaded again, not even at midnight, contradicting the README's
+  "who's booked what today" claim once the date silently became yesterday
+  under the still-open tab. Fixed (`88d99f1`) by adding midnight as an
+  always-present fallback boundary in `nextReloadDelayMinutes`, layered on
+  top of the existing per-booking-boundary function without changing its
+  own semantics or tests. The symmetric case --- a tab parked on an explicit
+  `?date=<tomorrow>` view, waiting for real midnight to make that date
+  become today --- had the same gap (`nextBoundaryDelay` unconditionally
+  `null` for any non-today view); fixed (`84b4328`) by extracting
+  `minutesUntilMidnight` and scheduling a reload for the tomorrow-view case
+  specifically (see `src/pages/index.astro`'s `nextBoundaryDelay` ternary).
+  A fourth check --- a tab parked on a *past* date --- came back clean: past
+  dates are hard-gated off live highlighting by `isToday` and never need a
+  reload. General lesson for this repo: "reload at the next boundary" is
+  only as complete as the set of boundary *kinds* enumerated (an event- or
+  booking-driven boundary vs. a calendar/date boundary vs. which *view* of
+  the data is open), and each of this page's several views of the same
+  underlying live-highlighting rule needed the question asked separately.
+- **`addBooking`'s and `cancelBooking`'s own code comments each argue no two
+  requests can race between their read and their write, because
+  better-sqlite3 is synchronous with no `await` in between --- checked live
+  with real concurrent HTTP requests rather than trusted from the reasoning
+  alone, for both endpoints.** `addBooking`: five genuinely parallel `curl`
+  POSTs (real backgrounded OS processes, not sequential `await`s) at the
+  same overlapping room/date/time landed exactly one booking, the rest got
+  `error=conflict`, confirmed against the built preview server and locked
+  in as `spec/booking.test.ts`'s "booking the same slot from multiple
+  requests at once" (`846a5b7`). `cancelBooking`: the same shape but with
+  no read-then-write check at all (just a single delete), so five
+  concurrent cancels of the same id all returned 303 with exactly one
+  actual deletion and no crash; and a cancel racing a new overlapping
+  booking for the freed slot, repeated across many trials, held the
+  invariant that the original booking was always gone and the racer's own
+  booking landed if and only if its redirect carried no `error=conflict`
+  --- never both present, never a silent loss unexplained by an error param.
+  Both turned into permanent regression tests (`a1df375`). Closes the
+  concurrency-race lens for this repo as dry across both write endpoints.
+- A fresh reread of `PROCESS.md`/`README.md` against the current codebase
+  (page structure, the SSE/boundary reload mechanisms above, the cited ANU
+  Library URL, the now-fixed `.error`/`--seal` leak) found no stale claims
+  --- everything they describe still matches what the code does. Worth
+  noting this came back clean rather than skipping the check: these two
+  files were last substantively written early in the build, and a lot of
+  deepen-phase work (API validation, the accent-leak fix, three boundary
+  fixes, two rounds of concurrency tests) has landed since without either
+  file being revisited.
 - **The "happening now" highlight is computed once per server render and
   nothing on the page re-checks the wall clock afterwards — a tab left open
   across a booking's start or end minute kept showing that render's stale
