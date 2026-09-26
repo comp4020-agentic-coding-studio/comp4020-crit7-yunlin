@@ -125,6 +125,33 @@ describe("cancelling a booking", () => {
   });
 });
 
+// addBooking's own comment (src/lib/db.ts) argues no two requests can ever
+// interleave between its overlap check and its insert, because better-
+// sqlite3's calls are synchronous — but that's a claim about this app's own
+// behaviour, and this repo's standing practice is to check such a claim live
+// rather than trust the reasoning. Real concurrent HTTP requests (not two
+// sequential awaits) are what could actually expose a check-then-insert race
+// if the reasoning were wrong.
+describe("booking the same slot from multiple requests at once", () => {
+  const date = "2031-06-09";
+
+  it("lets exactly one of several concurrent overlapping requests win", async () => {
+    const attempts = ["first", "second", "third", "fourth", "fifth"].map((who) =>
+      post("/api/bookings", new URLSearchParams({ date, roomId: "1", startTime: "12:00", endTime: "13:00", bookedBy: who })),
+    );
+    const results = await Promise.all(attempts);
+    const outcomes = results.map((res) => res.headers.get("location") ?? "");
+    const winners = outcomes.filter((location) => !location.includes("error"));
+    const conflicts = outcomes.filter((location) => location.includes("error=conflict"));
+
+    expect(winners).toHaveLength(1);
+    expect(conflicts).toHaveLength(attempts.length - 1);
+
+    const page = await roomsPage(date);
+    expect(page.match(/12:00–13:00/g)).toHaveLength(1);
+  });
+});
+
 // The room dropdown and time inputs only ever send well-formed values, but
 // nothing stops a request from skipping the form entirely (this file's own
 // `post` helper does) — the write endpoint has to reject what the browser
