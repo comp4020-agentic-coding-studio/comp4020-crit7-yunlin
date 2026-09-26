@@ -166,6 +166,18 @@ const nextBoundaryDelay = isToday
         if (payload.date === date) location.reload();
       });
 
+      // The SSE stream carries no state of its own, just a "something
+      // changed" signal — so a connection that drops (a network blip, a
+      // server restart on deploy) and reconnects has no way to know what it
+      // missed while it was down. "open" fires on every reconnect as well as
+      // the first connect; reload on every one after the first, since by
+      // then the only safe assumption is that something might have changed.
+      let hasOpenedBefore = false;
+      source.addEventListener("open", () => {
+        if (hasOpenedBefore) location.reload();
+        hasOpenedBefore = true;
+      });
+
       // The other half of "live": the "happening now" highlight and the
       // date-nav's "(today)" label are both computed once, at render time.
       // With no other tab ever booking or cancelling anything today, this
