@@ -2136,6 +2136,21 @@ specific resilience scenarios.
   subsystem entirely (here: a server-side concurrency check, a different
   failure family than every prior DOM/browser-timing one) rather than a
   fifth variant of the same boundary question.
+- Ran the forced-colors/prefers-contrast lens (established on crit 5's
+  canvas game) on crit 7's form-based room board for the first time: a raw
+  CDP script toggling `Emulation.setEmulatedMedia` between `forced-colors:
+  active` and `prefers-contrast: more` showed the page correctly inherits
+  system forced-colors values (no `forced-color-adjust: none` opt-out
+  anywhere, the right default here since there's no canvas needing an
+  exemption), and `prefers-contrast: more` changing nothing rendered turned
+  out to be correct rather than a gap once both live contrast ratios were
+  computed directly: seal-on-paper (the "— now" highlight text) at 7.35:1
+  and ink-on-paper body text at 14.50:1, both already clearing WCAG AAA's
+  7:1 floor with no headroom a contrast-boost branch would need to add.
+  Worth computing the actual ratio before treating "nothing changed under
+  prefers-contrast" as a finding — it can mean the page was already
+  high-contrast enough that the media query has nothing to add, which is a
+  clean result, not a miss.
 - Followed the `addBooking` concurrency check with the same live discipline
   on `cancelBooking`, which has an even simpler shape (a single delete
   statement, no read-then-write check at all): 5 genuinely concurrent
