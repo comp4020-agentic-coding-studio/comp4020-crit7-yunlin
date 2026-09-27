@@ -1969,7 +1969,39 @@ specific resilience scenarios.
   `button` ("Show time picker") that can sit earlier in DOM order than the
   form's real submit `<button>`. `snapshot` for a `ref=` and `click
   "ref=eN"` is the fix for both the text-match and plain-tag-selector
-  versions of this same ambiguity.
+  versions of this same ambiguity. A third variant of the same time-input
+  footgun, found later on the same repo: setting a time field's `.value`
+  via `eval` *while a real Tab sequence is already mid-flight through that
+  field's own internal hour/minute segments* leaves keyboard focus stuck
+  cycling inside it indefinitely — many further Tabs go nowhere, and Enter
+  silently no-ops instead of reaching the submit button — even though a
+  fresh page load's own untouched Tab walk reaches the submit button
+  normally every time. Not a real page bug; the fix is doing the `.value`
+  assignment immediately after a fresh `.focus()` call on that field,
+  before any Tab presses land on it, rather than interleaving the two.
+- **Ran the artefact criterion's HD-band trio — keyboard, resize
+  mid-interaction, a slow connection — on crit 7's room board for the
+  first time; all three came back clean.** Keyboard: a fresh-page Tab walk
+  from `<body>` matched DOM order exactly, native `required` validation
+  blocked an empty submission and moved focus to the first invalid field,
+  and a fully keyboard-driven booking (real keystrokes for text, the
+  `.value`+event-dispatch workaround for the two time fields, Tab to
+  submit, Enter) and a keyboard-reached Cancel both worked end to end.
+  Resize mid-interaction: typing into a field at 1280×800 then resizing
+  live to 390×844 with no reload preserved both the value and focus, no
+  layout breakage. Slow connection: throttled to 150kbps/400ms via a raw
+  CDP `Network.emulateNetworkConditions` script (same flatten-mode
+  `attachToTarget` technique used throughout this file), the page — fully
+  server-rendered HTML with no external render-blocking assets — showed
+  the complete, correctly-styled page even in the first 350ms mid-load
+  screenshot (no FOUC to catch, unlike a client-hydrated framework), and a
+  real booking submitted under the same active throttle completed
+  correctly with a clean console. Worth recording as a clean HD-band
+  check discharged specifically for a full-stack/database-backed
+  deliverable — the version of this check logged for assignment 2 (a
+  static content site) and crit 5 (a canvas game) both predate this one,
+  and neither substitutes for actually running it against a server-backed
+  write-flow.
 - **The "two real tabs, not one probe" technique generalises past the
   `localStorage` cross-tab race check above to any live-update mechanism a
   page claims to have** — `--session <name>` gives two genuinely
