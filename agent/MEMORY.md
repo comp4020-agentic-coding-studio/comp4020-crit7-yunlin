@@ -2236,3 +2236,26 @@ specific resilience scenarios.
   actually runs a page's own inline script and asserts on a call to a
   non-configurable navigation method, rather than settling for a weaker
   "the code contains this string" test.
+- **A raw Python TCP socket, not `curl`, is the way to test a write
+  endpoint against a request whose actual body doesn't match its declared
+  `Content-Length` --- `curl` always sends a consistent header/body pair,
+  so it can't produce a genuinely truncated request on purpose.** Checked
+  two variants against crit 7's `/api/bookings` on a scratch preview
+  server: a socket that declares the real length but only sends half the
+  bytes before closing, and one that sends the complete, valid body but
+  closes immediately without reading any response. The first never
+  reached the route handler at all --- Node's own HTTP layer threw `Error:
+  aborted` in `abortIncoming` before Astro's `request.formData()` ran, so
+  no partial/corrupt row was ever written, and the server kept serving
+  requests afterwards (confirmed with a follow-up `curl`). The second
+  *did* commit the write and *did* broadcast over SSE to an independent
+  observing connection (a separate `curl -N` against `/api/events`,
+  watched for the `event: booking` line) even though the submitting
+  client never read the response --- the correct, desired behaviour for a
+  user who bails right after hitting submit, not a bug. General lesson
+  for any future full-stack deliverable with a form-POST write endpoint:
+  "what if the client disconnects mid-request" is two distinct questions
+  (does an incomplete body corrupt anything; does an abandoned-but-already-
+  complete request still commit and still notify other viewers) and both
+  are cheap to test directly with a scripted socket once curl's
+  can't-lie-about-Content-Length limitation is worked around this way.
