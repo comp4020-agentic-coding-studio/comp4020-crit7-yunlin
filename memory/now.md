@@ -1,56 +1,59 @@
 # now
 
-**State:** deepen phase, 69h to cutoff at the start of this run. Brief
-re-fetched, no drift. Ran the artefact criterion's own named HD-band trio
-— "the keyboard, a resize mid-interaction, a slow connection" — on this
-repo for the first time (repo-local memory had no prior entry for any of
-the three). All three came back clean; no code changes this run.
+**State:** deepen phase, 63h to cutoff at the start of this run. Brief
+re-fetched, no drift. Ran the forced-colors/prefers-contrast lens on this
+repo for the first time (done before on crit 5's canvas game, never on
+this form-based/data page) plus a reread of `README.md`/`PROCESS.md`
+against current code. Both closed clean; no code changes this run.
 
 **What I did this run:**
 
-1. Built (`pnpm check` green, 47/47) and ran the built preview server
-   against a scratch DB (`/tmp/crit7-check/app.db`, deleted the whole
-   scratch directory afterwards per the standing WAL-sidecar lesson) on a
-   fresh port — 4398/4399 were already held by an unrelated project in
-   this shared sandbox, confirming the standing port-collision footgun.
-2. Keyboard: fresh-page Tab walk from `<body>` matches DOM order exactly;
-   native `required` validation blocks empty submission and moves focus to
-   the first invalid field; a fully keyboard-driven booking (real
-   keystrokes for the name field via `agent-browser keyboard type`, the
-   `.value`+`input`/`change`-event workaround for the two time fields, Tab
-   to submit, Enter) succeeded end to end; a keyboard-reached Cancel
-   button (correctly ordered before the booking form) removed it the same
-   way. Found and logged a new methodology footgun along the way: setting
-   a time field's `.value` via `eval` *while a Tab sequence is already
-   mid-flight through that field's own internal segments* leaves focus
-   stuck cycling in it forever — not a real page bug (a fresh, untouched
-   Tab walk always reaches the submit button normally); fix is doing the
-   `.value` assignment right after a fresh `.focus()`, not interleaved
-   with Tab presses on that same field.
-3. Resize mid-interaction: typed into the name field at 1280×800, resized
-   live to 390×844 with no reload — value and focus both survived, no
-   layout breakage (screenshotted to confirm).
-4. Slow connection: raw CDP script (`Target.attachToTarget` flatten mode,
-   same technique logged throughout this file), throttled to
-   150kbps/400ms via `Network.emulateNetworkConditions`. Page is fully
-   server-rendered HTML with no external render-blocking assets, so even
-   the first 350ms mid-load screenshot showed the complete, correctly
-   styled page — no FOUC to catch. Full load ~1.25s, zero console errors,
-   zero failed requests. A real booking submitted while the same throttle
-   was still active completed correctly with a clean console.
-5. Backfilled both memory files (repo-local and global) with the clean
-   HD-band result and the new time-input-Tab-race footgun. No commits
-   this run — nothing broke, nothing to fix; working tree stayed clean
-   throughout (confirmed via `git status` before finishing).
+1. `pnpm check` green (47/47), then a scratch preview server
+   (`DATABASE_PATH=/tmp/crit7-check/app.db`, port 4321 happened to be
+   free this time — confirmed by title-checking the curl response before
+   trusting it, per the standing port-collision footgun) with one booking
+   made active right now via `curl -H "Origin: ..."` against the API.
+2. Forced-colors/prefers-contrast: raw CDP script (flatten-mode
+   `attachToTarget`, same technique logged throughout `MEMORY.md`) toggling
+   `Emulation.setEmulatedMedia` with `forced-colors: active` and separately
+   `prefers-contrast: more`. `forced-colors: active` correctly flips body/
+   link/border colours to system forced-colors values (`rgb(0,0,0)` on
+   white, links `rgb(0,0,159)`) — nothing in `styles.css` opts out with
+   `forced-color-adjust: none`, the right default here since this page has
+   no canvas needing an exemption (unlike crit 5). `prefers-contrast: more`
+   changes nothing rendered, which is correct rather than a gap: computed
+   both relevant contrast ratios directly (seal-on-paper for the "— now"
+   italic suffix: 7.35:1; ink-on-paper body text: 14.50:1), both already
+   clearing WCAG AAA's 7:1, so there's no headroom a `prefers-contrast`
+   branch would need to add. `agent-browser console` stayed empty through
+   both emulated modes.
+3. Reread `README.md` and `PROCESS.md` against current `src/` (last
+   confirmed clean a few runs back, before the SSE-reconnect fix and the
+   midnight/tomorrow-view boundary fixes landed since): both still
+   accurate — the one-accent claim, the four spec-enforced behaviours, the
+   "deliberately left out" list, and PROCESS's account of the build
+   sequence and the Guestbook-nav bug all check out against current code.
+   Grepped `styles.css` for every `var(--seal)` use again (three, all the
+   active-booking highlight) and confirmed `.error` is still plain-`--ink`
+   styled, not seal — the crit-4-era regression this pattern is meant to
+   catch stayed fixed.
+4. Cleaned up: killed the scratch preview server, `rm -rf`'d the whole
+   scratch directory (not just the `.db` file, per the standing WAL-sidecar
+   lesson). `git status` clean throughout; no commits this run since
+   nothing broke and nothing needed fixing.
 
-**Single most important next action:** the HD-band trio is now closed
-clean for this repo, joining the wall-clock-boundary and concurrency
-lenses as exhausted angles. Next run needs a genuinely fresh question,
-not a re-verification of any of these three — candidates not yet tried
-here specifically: a forced-colors/prefers-contrast pass (done on crit 5's
-canvas game, never on this form-based page), or rereading `README.md`/
-`PROCESS.md` against the current code one more time now that this run's
-work has landed (last confirmed clean a few runs back, before the
-SSE-reconnect fix). Not yet at finishing steps — reflection and
-`PROCESS.md` refresh stay deferred to the run the prompt calls last, per
-doctrine.
+**Single most important next action:** four independent lenses are now
+closed clean on this repo — wall-clock boundaries, concurrency (both write
+endpoints), the HD-band trio (keyboard/resize/slow-connection), and now
+forced-colors/prefers-contrast. Next run needs a genuinely fresh question
+rather than a sixth re-verification of any of these. Untried candidates
+specific to this repo: a live check of what happens to an *in-flight POST*
+to `/api/bookings` if the SSE connection drops mid-request (distinct from
+the already-checked "drops while idle, reconnects" case); or checking the
+`/readme/` page's own accessibility/live-region behaviour independently
+rather than assuming it inherits the index page's clean results (it has no
+dynamic content, so this may turn out to be a quick "nothing here to
+check" close rather than a real lens — confirm that quickly rather than
+skipping it). Not yet at finishing steps (63h out, deepen phase continues);
+reflection and `PROCESS.md`'s final read-through stay deferred to the run
+the prompt calls last, per doctrine.
