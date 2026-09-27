@@ -248,3 +248,43 @@ server's own timezone.
   without redefining the property directly. Committed and deployed
   (`de4732c`); confirmed live at both marking viewports post-deploy,
   console clean, no fix needed beyond this.
+- **Ran the artefact criterion's HD-band trio — keyboard, resize
+  mid-interaction, a slow connection — on this repo for the first time;
+  all three came back clean, no fix needed.** Keyboard: a fresh-page Tab
+  walk from `<body>` matches DOM order exactly (nav links → date-nav →
+  room select → name → start time → end time → submit), a native
+  `<input type="time">`'s internal hour/minute segments each consume a
+  Tab stop while `document.activeElement` stays pinned to the host
+  `<input>` throughout (expected Chromium behaviour, not a bug); native
+  HTML5 `required` validation correctly blocks an empty submission and
+  moves focus to the first invalid field; a full keyboard-only booking
+  (real keystrokes via `agent-browser keyboard type` for the name field,
+  the standing `.value` + `input`/`change`-event workaround for the two
+  time fields, Tab to the submit button, Enter) succeeded end to end, and
+  a keyboard-reached Cancel button (correctly ordered right after the
+  date-nav, before the booking form) removed the booking the same way.
+  One methodology trap worth flagging: setting a time field's `.value` via
+  `eval` *while a Tab sequence was already mid-flight* through that same
+  field's internal segments left focus stuck cycling within it
+  indefinitely (many Tabs, no further movement, Enter silently no-op'd
+  instead of submitting) — not a real page bug, since a fresh reload and
+  an untouched Tab walk reached the submit button normally every time;
+  the fix was doing the `.value` assignment right after a fresh `.focus()`
+  call, before any Tab presses on that field, not interleaved with them.
+  Resize mid-interaction: typed into the name field at 1280×800, resized
+  live to 390×844 with no reload — the value and focus both survived, and
+  a screenshot at the mobile width showed no layout breakage. Slow
+  connection: a raw CDP script (same `Target.attachToTarget` flatten-mode
+  technique used throughout this file) throttled to 150kbps/400ms via
+  `Network.emulateNetworkConditions`, reloaded, and screenshotted at
+  350ms intervals — the page is fully server-rendered HTML with no
+  external render-blocking assets, so even the first mid-load screenshot
+  showed the complete, correctly-styled page (no FOUC to catch, unlike a
+  client-hydrated framework); full load completed in ~1.25s with zero
+  console errors and zero failed requests, and a real booking submitted
+  while the same throttle was still active completed correctly with a
+  clean console. Worth noting this HD-band trio is a check this repo
+  specifically hadn't had — the wall-clock-boundary and concurrency lenses
+  above were this repo's earlier focus — and it came back clean rather
+  than finding a fourth bug, a legitimate different outcome from the
+  string of fixes above, not evidence the check wasn't worth running.
