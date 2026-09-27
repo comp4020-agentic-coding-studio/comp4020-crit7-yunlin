@@ -1,59 +1,67 @@
 # now
 
-**State:** deepen phase, 63h to cutoff at the start of this run. Brief
-re-fetched, no drift. Ran the forced-colors/prefers-contrast lens on this
-repo for the first time (done before on crit 5's canvas game, never on
-this form-based/data page) plus a reread of `README.md`/`PROCESS.md`
-against current code. Both closed clean; no code changes this run.
+**State:** deepen phase, 52h to cutoff at the start of this run. Brief
+re-fetched (raw JSON `body`, not just WebFetch's summary), no drift. Closed
+both candidates the last hand-off named, plus confirmed the live deploy is
+current. No code changes this run.
 
 **What I did this run:**
 
-1. `pnpm check` green (47/47), then a scratch preview server
-   (`DATABASE_PATH=/tmp/crit7-check/app.db`, port 4321 happened to be
-   free this time — confirmed by title-checking the curl response before
-   trusting it, per the standing port-collision footgun) with one booking
-   made active right now via `curl -H "Origin: ..."` against the API.
-2. Forced-colors/prefers-contrast: raw CDP script (flatten-mode
-   `attachToTarget`, same technique logged throughout `MEMORY.md`) toggling
-   `Emulation.setEmulatedMedia` with `forced-colors: active` and separately
-   `prefers-contrast: more`. `forced-colors: active` correctly flips body/
-   link/border colours to system forced-colors values (`rgb(0,0,0)` on
-   white, links `rgb(0,0,159)`) — nothing in `styles.css` opts out with
-   `forced-color-adjust: none`, the right default here since this page has
-   no canvas needing an exemption (unlike crit 5). `prefers-contrast: more`
-   changes nothing rendered, which is correct rather than a gap: computed
-   both relevant contrast ratios directly (seal-on-paper for the "— now"
-   italic suffix: 7.35:1; ink-on-paper body text: 14.50:1), both already
-   clearing WCAG AAA's 7:1, so there's no headroom a `prefers-contrast`
-   branch would need to add. `agent-browser console` stayed empty through
-   both emulated modes.
-3. Reread `README.md` and `PROCESS.md` against current `src/` (last
-   confirmed clean a few runs back, before the SSE-reconnect fix and the
-   midnight/tomorrow-view boundary fixes landed since): both still
-   accurate — the one-accent claim, the four spec-enforced behaviours, the
-   "deliberately left out" list, and PROCESS's account of the build
-   sequence and the Guestbook-nav bug all check out against current code.
-   Grepped `styles.css` for every `var(--seal)` use again (three, all the
-   active-booking highlight) and confirmed `.error` is still plain-`--ink`
-   styled, not seal — the crit-4-era regression this pattern is meant to
-   catch stayed fixed.
-4. Cleaned up: killed the scratch preview server, `rm -rf`'d the whole
-   scratch directory (not just the `.db` file, per the standing WAL-sidecar
-   lesson). `git status` clean throughout; no commits this run since
-   nothing broke and nothing needed fixing.
+1. `pnpm check` green (47/47).
+2. **In-flight-POST-vs-connection-drop**, the first candidate named last
+   run: built a scratch preview server and drove raw TCP sockets (Python,
+   not curl, so a Content-Length could be declared without sending the
+   promised bytes) at `/api/bookings`.
+   - A **truncated body** (client sends half the declared bytes, then
+     closes) never reaches `addBooking` at all — Node's HTTP layer throws
+     `Error: aborted` in `abortIncoming` before Astro's route handler runs,
+     no partial/corrupt row was written, and the server process kept
+     serving requests afterwards. Clean.
+   - A **complete, valid body whose client closes the socket immediately
+     without reading the response** (simulating a tab closed right after
+     submit) *did* commit the write and *did* broadcast over SSE to an
+     independent observing connection (`curl -N /api/events`, confirmed the
+     `event: booking` line arrived) — the desired behaviour, not a bug: a
+     user who bails immediately after submitting still gets their booking,
+     and other tabs still hear about it. Both directions closed clean.
+2. **`/readme/` page's own accessibility/live-region behaviour**, the
+   second candidate: confirmed it really has nothing dynamic to check —
+   `grep`ped the rendered HTML for `aria-live`/`role=`/`<script` (none),
+   confirmed a clean `h1`→`h2` heading hierarchy, and loaded it live with
+   `agent-browser` (empty console). This is the "nothing here to check,
+   confirm quickly rather than skip it" outcome the last hand-off
+   predicted, now actually confirmed rather than assumed.
+3. **Live deploy freshness** (not previously logged as its own check):
+   `flyctl status` showed the one machine `stopped` (fly.toml's
+   `auto_stop_machines`/`auto_start_machines`, expected — cents not
+   dollars), and a real `curl` to `https://comp4020-crit7-yunlin.fly.dev/`
+   woke it (5s cold start) and served the correct page. `flyctl releases`
+   showed v8 deployed ~23.5h before this run's start; `git log --since` on
+   every source-relevant path (`src`, `spec`, `Dockerfile`, `fly.toml`,
+   `drizzle`, `package.json`) found nothing committed since — the deploy is
+   current, no redeploy needed this run.
+4. Cleaned up: killed the scratch server, `rm -rf`'d the whole scratch
+   directory (WAL-sidecar lesson), closed the `agent-browser` session.
+   `git status` clean throughout; no commits this run.
 
-**Single most important next action:** four independent lenses are now
-closed clean on this repo — wall-clock boundaries, concurrency (both write
-endpoints), the HD-band trio (keyboard/resize/slow-connection), and now
-forced-colors/prefers-contrast. Next run needs a genuinely fresh question
-rather than a sixth re-verification of any of these. Untried candidates
-specific to this repo: a live check of what happens to an *in-flight POST*
-to `/api/bookings` if the SSE connection drops mid-request (distinct from
-the already-checked "drops while idle, reconnects" case); or checking the
-`/readme/` page's own accessibility/live-region behaviour independently
-rather than assuming it inherits the index page's clean results (it has no
-dynamic content, so this may turn out to be a quick "nothing here to
-check" close rather than a real lens — confirm that quickly rather than
-skipping it). Not yet at finishing steps (63h out, deepen phase continues);
-reflection and `PROCESS.md`'s final read-through stay deferred to the run
-the prompt calls last, per doctrine.
+**Single most important next action:** five independent lenses now closed
+clean — wall-clock boundaries, concurrency (both write endpoints, complete
+requests), the HD-band trio, forced-colors/prefers-contrast, and now
+connection-drop robustness plus the `/readme/` page and deploy freshness.
+Two small, not-yet-tried candidates for the next run, both quick: (a)
+`[id]/cancel.ts` never validates its `date` form field the way
+`bookings.ts` validates all of its inputs — reread the code this run and
+concluded it's harmless (the field is never persisted, only echoed into a
+redirect querystring and an SSE payload no mismatched tab would act on),
+but that conclusion was reached by reading, not by a live crafted-request
+check, so worth actually trying a garbage `date` value against
+`/api/bookings/<id>/cancel` to confirm rather than trust the read; (b) a
+rapid double-submit of the same cancel form (two POSTs to the same id
+close together) — `cancelBooking` looks idempotent by construction (second
+call's `delete` affects zero rows, `bus.emit` is gated on `removed.length
+> 0`), but hasn't been driven live the way every other race in this repo
+has. If both close clean too, the next run after that should look for a
+genuinely different subsystem again rather than a third small validation
+gap in the same file. Not yet at finishing steps (52h out); reflection and
+`PROCESS.md`'s final read-through stay deferred to the run the prompt
+calls last, per doctrine.
