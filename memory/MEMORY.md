@@ -288,3 +288,40 @@ server's own timezone.
   above were this repo's earlier focus — and it came back clean rather
   than finding a fourth bug, a legitimate different outcome from the
   string of fixes above, not evidence the check wasn't worth running.
+- **`cancel.ts` broadcast the client-submitted `date` form field over SSE
+  instead of the cancelled booking's own stored date — the one write
+  endpoint in this repo that broke its sibling's own pattern** (`bookings.ts`
+  broadcasts `booking.date`, the value returned from the DB after
+  validation, never the raw form field). A crafted POST to
+  `/api/bookings/<id>/cancel` with a mismatched `date` still deleted the
+  row correctly, but a genuine observer tab parked on the booking's real
+  date (`payload.date === date` in `index.astro`'s inline script) never
+  matched the crafted value and silently missed the cancellation, staying
+  stale indefinitely — breaking this repo's own stated live-update
+  guarantee ("any tab looking at this same date reloads … the moment a
+  booking is … cancelled anywhere"). Confirmed live twice (`cbd021b`):
+  first with a scratch server, a real `curl -N /api/events` observer, and
+  a crafted `curl` cancel with `date=not-a-real-date`, reading the raw SSE
+  payload; then end-to-end in a real `agent-browser` tab (tagged
+  `window.__marker` before the crafted cancel, confirmed the marker was
+  gone and the booking no longer shown after). Fixed by having
+  `cancelBooking` (`src/lib/db.ts`) return the deleted row's own `date`
+  (or `null`) instead of a bare boolean, and `cancel.ts` broadcast that
+  authoritative value — the redirect still honours the client-submitted
+  field, since that only picks which view the *submitting* browser lands
+  on, harmless even if crafted. Added a permanent regression test
+  (`spec/booking.test.ts`, "cancelling with a crafted, mismatched date
+  field") that posts a real crafted request and reads the real SSE stream.
+  General lesson: whenever two sibling write endpoints both broadcast a
+  "something changed" event, check they derive the broadcast payload from
+  the same source (the DB's own return value, not a client-submitted
+  field) — an inconsistency between them is exactly the kind of thing a
+  single-endpoint read misses, and only surfaces by comparing the two.
+- The rapid-double-submit-cancel candidate this file's own hand-off had
+  flagged as unverified turned out to already be covered: "cancelling the
+  same booking from multiple requests at once" (added earlier, alongside
+  the concurrent-booking test) already drives 5 genuinely concurrent
+  cancel POSTs via `Promise.all` and asserts exactly-once cancellation
+  with no error from any request. Worth rereading the actual spec file
+  before trusting a memory-recalled "not yet tested" claim — the claim
+  itself can go stale even in a repo that otherwise keeps careful notes.
