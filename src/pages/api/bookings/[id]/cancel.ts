@@ -10,8 +10,14 @@ export const POST: APIRoute = async ({ params, request, redirect }) => {
   const id = Number(params.id);
   const form = await request.formData();
   const date = String(form.get("date") ?? "");
-  if (Number.isInteger(id) && cancelBooking(id)) {
-    bus.emit("booking", { date });
+  if (Number.isInteger(id)) {
+    // Broadcast the booking's own stored date, not whatever the client's
+    // hidden form field claims — the redirect below still honours the
+    // submitted date (it only decides which view *this* browser lands on),
+    // but a crafted request with a mismatched date must not stop other
+    // tabs on the real date from hearing about the cancellation.
+    const removedDate = cancelBooking(id);
+    if (removedDate) bus.emit("booking", { date: removedDate });
   }
   return redirect(`/?${new URLSearchParams({ date })}`, 303);
 };

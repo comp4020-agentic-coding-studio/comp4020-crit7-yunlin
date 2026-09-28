@@ -78,8 +78,8 @@ export function addBooking(candidate: NewBooking): Booking {
   return db.insert(bookings).values(candidate).returning().get();
 }
 
-/** Returns whether a booking with that id existed to cancel. */
-export function cancelBooking(id: number): boolean {
+/** Returns the deleted booking's own date, or null if no booking with that id existed. */
+export function cancelBooking(id: number): string | null {
   const removed = db.delete(bookings).where(eq(bookings.id, id)).returning().all();
-  return removed.length > 0;
+  return removed[0]?.date ?? null;
 }

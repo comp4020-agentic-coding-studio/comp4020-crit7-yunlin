@@ -125,6 +125,50 @@ describe("cancelling a booking", () => {
   });
 });
 
+// Cancel's own hidden `date` form field only exists to redirect the
+// submitting browser back to the view it came from — the HTML form always
+// sends it correctly because it's the page's own date, but the API boundary
+// has to reach the same result for a crafted request that sends something
+// else, the way spec/booking.test.ts already probes bookings.ts directly.
+// The stream every other tab actually listens on has to carry the
+// cancelled booking's own real date, not whatever a client claims.
+describe("cancelling with a crafted, mismatched date field", () => {
+  const date = "2031-07-14";
+  let bookingId: number;
+
+  beforeAll(async () => {
+    await post(
+      "/api/bookings",
+      new URLSearchParams({ date, roomId: "1", startTime: "09:00", endTime: "10:00", bookedBy: "crafted-cancel probe" }),
+    );
+    const rows = await roomsPage(date);
+    const match = rows.match(/\/api\/bookings\/(\d+)\/cancel/);
+    if (!match) throw new Error("couldn't find the booking's cancel form");
+    bookingId = Number(match[1]);
+  });
+
+  it("still cancels the booking, but broadcasts the booking's own date, not the crafted one", async () => {
+    const stream = await fetch(new URL("/api/events", baseUrl));
+    const reader = stream.body?.getReader();
+    if (!reader) throw new Error("no response body");
+
+    const res = await post(`/api/bookings/${bookingId}/cancel`, new URLSearchParams({ date: "not-a-real-date" }));
+    expect(res.status).toBe(303);
+    expect(await roomsPage(date)).not.toContain("crafted-cancel probe");
+
+    const decoder = new TextDecoder();
+    let received = "";
+    while (!received.includes("event: booking")) {
+      const { value, done } = await reader.read();
+      if (done) throw new Error("stream ended before the event arrived");
+      received += decoder.decode(value, { stream: true });
+    }
+    await reader.cancel();
+    expect(received).toContain(`data: {"date":"${date}"}`);
+    expect(received).not.toContain("not-a-real-date");
+  }, 10_000);
+});
+
 // addBooking's own comment (src/lib/db.ts) argues no two requests can ever
 // interleave between its overlap check and its insert, because better-
 // sqlite3's calls are synchronous — but that's a claim about this app's own
