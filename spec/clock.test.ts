@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { minutesUntilMidnight, nextBoundaryDelayMinutes, nextReloadDelayMinutes } from "../src/lib/clock";
+import {
+  canberraWallTimeToEpochMs,
+  minutesUntilMidnight,
+  nextBoundaryDelayMinutes,
+  nextReloadDelayMinutes,
+  nextReloadTargetEpochMs,
+} from "../src/lib/clock";
 
 // Caught live, against the running app, before this existed: the "happening
 // now" highlight is computed once per render, so a tab left open across a
@@ -59,5 +65,54 @@ describe("minutesUntilMidnight", () => {
     expect(minutesUntilMidnight("09:00")).toBe(15 * 60);
     expect(minutesUntilMidnight("23:50")).toBe(10);
     expect(minutesUntilMidnight("00:00")).toBe(24 * 60);
+  });
+});
+
+// nextReloadDelayMinutes is wall-clock *minute* arithmetic, which quietly
+// assumes a wall-clock minute is always a real minute — false on the two
+// nights a year Canberra's clocks shift for daylight saving. 2026-10-04 is
+// this year's real spring-forward date (02:00 AEST jumps straight to 03:00
+// AEDT). A tab open at 01:00 that night, with nothing left to wait for
+// today, gets minutesUntilMidnight("01:00") = 1380 minutes — but real
+// Canberra midnight is only 1320 real minutes away, because the day it's
+// waiting out is itself an hour short. Scheduling the naive 1380-minute
+// delay with setTimeout — as src/pages/index.astro did before this test
+// existed — fires the reload 60 real minutes after the date has already
+// rolled over, leaving the page showing a stale "(today)" label and
+// highlighting for that whole hour.
+describe("canberraWallTimeToEpochMs / nextReloadTargetEpochMs (DST safety)", () => {
+  it("resolves an ordinary wall-clock date+time to its real UTC instant", () => {
+    expect(canberraWallTimeToEpochMs("2026-06-15", "14:30")).toBe(
+      new Date("2026-06-15T14:30:00+10:00").getTime(),
+    );
+  });
+
+  it("returns null for a wall-clock time inside the spring-forward skipped hour", () => {
+    expect(canberraWallTimeToEpochMs("2026-10-04", "02:30")).toBeNull();
+  });
+
+  it("the naive minute-count for midnight is wrong by exactly the DST offset on the transition night", () => {
+    const nowEpoch = canberraWallTimeToEpochMs("2026-10-04", "01:00")!;
+    const naiveTargetEpoch = nowEpoch + minutesUntilMidnight("01:00") * 60_000;
+    const realMidnightEpoch = canberraWallTimeToEpochMs("2026-10-05", "00:00")!;
+    expect(naiveTargetEpoch - realMidnightEpoch).toBe(60 * 60_000);
+  });
+
+  it("nextReloadTargetEpochMs lands exactly on real Canberra midnight across the spring-forward night", () => {
+    const target = nextReloadTargetEpochMs("2026-10-04", "01:00", []);
+    expect(target).toBe(canberraWallTimeToEpochMs("2026-10-05", "00:00"));
+  });
+
+  it("nextReloadTargetEpochMs still prefers a sooner same-day booking boundary over midnight", () => {
+    const target = nextReloadTargetEpochMs("2026-06-15", "09:00", ["09:30"]);
+    expect(target).toBe(canberraWallTimeToEpochMs("2026-06-15", "09:30"));
+  });
+
+  it("resolves correctly across the autumn fall-back night too", () => {
+    // 2026-04-05 is this year's real fall-back date (03:00 AEDT repeats as
+    // 02:00 AEST) — an ordinary hour either side of the repeated one still
+    // resolves to its own real instant, not the naive wall-clock guess.
+    const target = nextReloadTargetEpochMs("2026-04-05", "01:00", []);
+    expect(target).toBe(canberraWallTimeToEpochMs("2026-04-06", "00:00"));
   });
 });

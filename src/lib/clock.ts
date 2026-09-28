@@ -3,6 +3,26 @@ function toMinutes(hhmm: string): number {
   return h * 60 + m;
 }
 
+export function canberraParts(d: Date): { date: string; time: string } {
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Australia/Canberra",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const parts = Object.fromEntries(fmt.formatToParts(d).map((p) => [p.type, p.value]));
+  return { date: `${parts.year}-${parts.month}-${parts.day}`, time: `${parts.hour}:${parts.minute}` };
+}
+
+export function shiftDate(base: string, days: number): string {
+  const d = new Date(`${base}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 // The "happening now" highlight (src/pages/index.astro's isNowWithin) is
 // computed once, at render time, against `nowTime`. Nothing else on the page
 // re-checks the wall clock, so a tab left open across a booking's start or
@@ -35,4 +55,44 @@ export function nextReloadDelayMinutes(nowTime: string, boundaries: string[]): n
   const bookingDelay = nextBoundaryDelayMinutes(nowTime, boundaries);
   const untilMidnight = minutesUntilMidnight(nowTime);
   return bookingDelay === null ? untilMidnight : Math.min(bookingDelay, untilMidnight);
+}
+
+// The functions above compute a boundary as *minutes from now*, which
+// quietly assumes a wall-clock minute is always a real minute — false on
+// the two nights a year Canberra's clocks shift for daylight saving.
+// Scheduling that many minutes with `setTimeout` fires up to an hour late
+// (skipping the spring 2am→3am gap) or early (repeating the autumn 3am→2am
+// hour) relative to the actual local instant it was meant to name — caught
+// by computing the real epoch for a tab left open at 01:00 on 2026-10-04
+// (this year's spring-forward date) and finding the naive midnight-delay
+// landed an hour after real Canberra midnight had already passed.
+//
+// This instead resolves a Canberra wall-clock date+time to the real UTC
+// instant it names, immune to that drift: Canberra only ever uses two
+// offsets (AEST +10, AEDT +11), so try both candidate instants and keep
+// whichever one's own Canberra rendering reads back as the requested
+// date+time. Returns null only for a wall-clock time inside the hour the
+// spring-forward transition skips (02:00–02:59 on that one date), which
+// never occurs in real time at all.
+export function canberraWallTimeToEpochMs(dateStr: string, hhmm: string): number | null {
+  for (const offsetHours of [10, 11]) {
+    const candidate = new Date(`${dateStr}T${hhmm}:00+${String(offsetHours).padStart(2, "0")}:00`).getTime();
+    const rendered = canberraParts(new Date(candidate));
+    if (rendered.date === dateStr && rendered.time === hhmm) return candidate;
+  }
+  return null;
+}
+
+// The absolute-epoch counterpart to nextReloadDelayMinutes, for a client to
+// schedule against with `target - Date.now()` rather than a bare minute
+// count — see src/pages/index.astro's nextBoundaryTarget.
+export function nextReloadTargetEpochMs(date: string, nowTime: string, boundaries: string[]): number {
+  const future = boundaries.filter((b) => b > nowTime).sort();
+  for (const hhmm of future) {
+    const target = canberraWallTimeToEpochMs(date, hhmm);
+    if (target !== null) return target;
+  }
+  // Midnight always exists — Canberra's DST transitions happen at 2–3am,
+  // never at 00:00 — so this never falls through to null.
+  return canberraWallTimeToEpochMs(shiftDate(date, 1), "00:00")!;
 }

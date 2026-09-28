@@ -1,32 +1,12 @@
 ---
-import { minutesUntilMidnight, nextReloadDelayMinutes } from "../lib/clock";
+import { canberraParts, canberraWallTimeToEpochMs, nextReloadTargetEpochMs, shiftDate } from "../lib/clock";
 import { listBookingsForDate, listRooms } from "../lib/db";
 import "../styles.css";
 
 // All times on this board are Canberra wall-clock text (see src/lib/schema.ts)
 // — "now" has to be read the same way, regardless of what timezone the
 // machine running the server happens to be in.
-function canberraParts(d = new Date()) {
-  const fmt = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Australia/Canberra",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-  const parts = Object.fromEntries(fmt.formatToParts(d).map((p) => [p.type, p.value]));
-  return { date: `${parts.year}-${parts.month}-${parts.day}`, time: `${parts.hour}:${parts.minute}` };
-}
-
-function shiftDate(base: string, days: number): string {
-  const d = new Date(`${base}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
-}
-
-const { date: today, time: nowTime } = canberraParts();
+const { date: today, time: nowTime } = canberraParts(new Date());
 const requestedDate = Astro.url.searchParams.get("date");
 const date = requestedDate && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate) ? requestedDate : today;
 const isToday = date === today;
@@ -62,10 +42,17 @@ const roomsWithBookings = rooms.map((room) => ({
 // moment real midnight arrives, this date stops being tomorrow and becomes
 // today, so its "(today)" label and live highlighting need to switch on —
 // any date further out has no near-term boundary worth waiting for.
-const nextBoundaryDelay = isToday
-  ? nextReloadDelayMinutes(nowTime, bookingsForDate.flatMap((b) => [b.startTime, b.endTime]))
+//
+// This is the real UTC instant of that boundary, not a minute count: a
+// minute count handed to the client's own setTimeout would assume a
+// wall-clock minute is always a real minute, which is false on the two
+// nights a year Canberra's clocks shift for daylight saving (see
+// canberraWallTimeToEpochMs in src/lib/clock.ts) — the client instead
+// computes its own delay as target-minus-now at load time.
+const nextBoundaryTarget = isToday
+  ? nextReloadTargetEpochMs(date, nowTime, bookingsForDate.flatMap((b) => [b.startTime, b.endTime]))
   : date === shiftDate(today, 1)
-    ? minutesUntilMidnight(nowTime)
+    ? canberraWallTimeToEpochMs(date, "00:00")
     : null;
 ---
 
@@ -154,7 +141,7 @@ const nextBoundaryDelay = isToday
         <button>Book {date}</button>
       </form>
     </main>
-    <script is:inline define:vars={{ date, nextBoundaryDelay }}>
+    <script is:inline define:vars={{ date, nextBoundaryTarget }}>
       // The board's live half: any tab looking at this same date reloads the
       // moment a booking is made or cancelled anywhere, so two people looking
       // at the same day never work from stale information. The form itself
@@ -185,15 +172,17 @@ const nextBoundaryDelay = isToday
       // past the end of a highlighted slot, past midnight into a day this
       // render was never "today" for, or (on a tab left parked on tomorrow's
       // view) past midnight into the moment that date becomes today and
-      // ought to switch its label and highlighting on. `nextBoundaryDelay`
-      // (minutes to the next booking start/end today, to midnight if
-      // nothing's left to wait for today, or to midnight if this view is
-      // tomorrow's date) is computed server-side in plain Canberra-clock
-      // minute arithmetic — no client-side timezone handling needed — so
-      // this fires exactly once, right when the page's own answer would go
-      // stale, and always within 24h whenever it applies at all.
-      if (nextBoundaryDelay !== null) {
-        setTimeout(() => location.reload(), nextBoundaryDelay * 60_000 + 5_000);
+      // ought to switch its label and highlighting on. `nextBoundaryTarget`
+      // (the real UTC instant of the next booking start/end today, of
+      // midnight if nothing's left to wait for today, or of midnight if
+      // this view is tomorrow's date) is computed server-side, correctly
+      // across a Canberra daylight-saving transition — see
+      // canberraWallTimeToEpochMs in src/lib/clock.ts. The client just
+      // takes the delay from its own clock at load time, rather than
+      // trusting a minute count computed at render time to still equal the
+      // same number of real milliseconds by the time it fires.
+      if (nextBoundaryTarget !== null) {
+        setTimeout(() => location.reload(), Math.max(0, nextBoundaryTarget - Date.now()) + 5_000);
       }
     </script>
   </body>
