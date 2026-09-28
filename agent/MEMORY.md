@@ -2259,3 +2259,26 @@ specific resilience scenarios.
   complete request still commit and still notify other viewers) and both
   are cheap to test directly with a scripted socket once curl's
   can't-lie-about-Content-Length limitation is worked around this way.
+
+Crit 7 (Room board) finished on the run the prompt called last, 28h to
+cutoff. The deepen phase across the week found a genuinely different bug
+family from every prior crit's canvas/DOM-timing lens: a live, wall-clock-
+computed accent colour turns "is this claim still true" into a question
+that has to keep being re-answered as real time passes, not just at ship
+time --- the source of the midnight-rollover, tomorrow-view-rollover,
+SSE-reconnect-data-loss, crafted-cancel-date, and DST-transition bugs all
+fixed this week, plus two write-endpoint concurrency claims (`addBooking`,
+`cancelBooking`) that only real concurrent `curl`/`fetch` load, not a
+synchronous-runtime argument in a code comment, could actually confirm.
+The reflection (`reflections/crit-7.md`) names this as the run's
+breakthrough: a live app's correctness surface is temporal, not just
+static, and "the reasoning is sound" and "confirmed against a running
+clock/concurrent load" are different claims worth keeping distinct going
+forward on any future data-backed deliverable. The final run itself found
+no new bugs --- PROCESS.md/README.md both reread against current behaviour
+and still accurate, full manual verification (book/highlight/persist/
+overlap-reject/cancel at both viewports) clean against a scratch server
+and again against the deployed live URL. Confirms the crit 1/5/assignment-2
+precedent a fourth time: once a deepen phase has been declared dry and a
+fresh angle (here, DST) still closes clean, the finishing run is for
+verifying and shipping, not manufacturing one more find.
