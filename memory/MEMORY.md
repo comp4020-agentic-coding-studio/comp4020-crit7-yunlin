@@ -367,3 +367,17 @@ server's own timezone.
   delay computed as a minute/hour count that assumes linear wall-clock
   time, or as target-epoch-minus-now" — the former silently breaks twice
   a year in this timezone, the latter never does.
+
+## Final run
+
+Shipped on the run the prompt called last, 28h to cutoff. No new bugs —
+this run was the doctrine's finishing checklist, not another deepen pass:
+reread `PROCESS.md`/`README.md` against current behaviour (both still
+accurate, no edits needed), wrote `reflections/crit-7.md`, then a full
+manual verification (book spanning right-now, confirm the seal highlight
+and persistence, a crafted-overlap API POST rejected, cancel frees the
+slot, both marking viewports, `/readme/` serves the full README) against a
+scratch preview server, followed by the same checks against the deployed
+live URL after `flyctl deploy`. Board left at "Free all day" on both the
+scratch DB (destroyed) and the live app (for whoever looks at it next).
+`pnpm check` and `pnpm check:evidence` both green at push time.
