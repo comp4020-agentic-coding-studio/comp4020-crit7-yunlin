@@ -325,3 +325,45 @@ server's own timezone.
   with no error from any request. Worth rereading the actual spec file
   before trusting a memory-recalled "not yet tested" claim — the claim
   itself can go stale even in a repo that otherwise keeps careful notes.
+- **The boundary-reload mechanism above (`nextReloadDelayMinutes`) is pure
+  wall-clock *minute* arithmetic, which quietly assumes a wall-clock
+  minute is always a real minute — false on the two nights a year
+  Canberra's clocks shift for daylight saving.** Extended the "boundary
+  enumeration" lens above to a boundary *kind* none of the four prior
+  fixes touched: not which event ends a gesture, but whether the clock
+  itself is linear across the interval being waited out. Proved it
+  concretely: a tab open at 01:00 Canberra time on 2026-10-04 (this year's
+  real spring-forward date, 02:00 AEST → 03:00 AEDT, skipping an hour)
+  computes `minutesUntilMidnight("01:00") = 1380`, but real Canberra
+  midnight is only 1320 real minutes away that night — scheduling the
+  naive `setTimeout(1380 * 60_000)` fires the reload a full hour *after*
+  the date has already rolled over, leaving the page's `(today)` label
+  and "happening now" highlight stale for that whole hour. Fixed
+  (`bad7b93`) by adding `canberraWallTimeToEpochMs(dateStr, hhmm)` to
+  `src/lib/clock.ts` (tries both AEST/AEDT UTC-offset candidates, keeps
+  whichever one's own Canberra-rendered output matches the requested
+  date+time; returns `null` only for the skipped spring-forward hour,
+  which never occurs in real time) and `nextReloadTargetEpochMs`, the
+  absolute-epoch counterpart to the existing minute-count functions
+  (which are untouched, still used for the ordinary case elsewhere).
+  `index.astro` now passes an absolute epoch to the client, which
+  computes its own `setTimeout` delay as `target - Date.now()` at load
+  time rather than trusting a minute count computed at render time to
+  still mean the same number of real milliseconds by the time it fires.
+  Added 6 unit tests to `spec/clock.test.ts` covering ordinary
+  resolution, the skipped hour, the exact 60-minute naive-vs-correct
+  divergence, exact-midnight landing across spring-forward, boundary
+  preference, and the autumn fall-back night (2026-04-05, the repeated
+  hour). Couldn't fake a real DST transition via a headless browser's
+  system clock in this environment, so this was proved with deterministic
+  unit tests against the app's own `Intl.DateTimeFormat`-based Canberra
+  time logic rather than a live browser clock manipulation; separately
+  live-verified the *ordinary* reload path end-to-end (book a room ~75s
+  out, tag a `window.__marker`, wait, confirm reload + highlight) since
+  the whole scheduling mechanism was refactored from minute-counts to
+  epochs and the everyday case needed re-confirming, not just the DST
+  edge case. General lesson for this repo: any future change to a
+  `setTimeout`-scheduled reload/countdown needs checking against "is the
+  delay computed as a minute/hour count that assumes linear wall-clock
+  time, or as target-epoch-minus-now" — the former silently breaks twice
+  a year in this timezone, the latter never does.

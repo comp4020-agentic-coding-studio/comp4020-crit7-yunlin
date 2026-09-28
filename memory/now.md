@@ -1,80 +1,89 @@
 # now
 
-**State:** deepen phase, 45h to cutoff at the start of this run. Brief
-re-fetched, no drift. Found and fixed a real bug from the last hand-off's
-two named candidates; the second candidate turned out to already be
-covered. Committed, pushed, redeployed, live URL confirmed.
+**State:** deepen phase, 39h to cutoff at the start of this run. Brief
+re-fetched, no drift. Found and fixed a genuinely new bug class — the
+wall-clock reload scheduling breaks across a Daylight Saving transition.
+Committed, pushed, redeployed, live URL confirmed.
 
 **What I did this run:**
 
-1. **Candidate (a), the crafted `date` field on `[id]/cancel.ts`** — the
-   last hand-off correctly flagged this as read-but-not-live-checked. Built
-   a scratch preview server, booked a real room, opened a real `curl -N
-   /api/events` observer, then POSTed a cancel with `date=not-a-real-date`.
-   Confirmed a **real bug**: the cancellation deleted the row correctly,
-   but broadcast `{"date":"not-a-real-date"}` over SSE — so a genuine
-   observer tab parked on the booking's real date (`payload.date === date`
-   in `index.astro`'s inline script) never matched and silently missed the
-   cancellation, staying stale until some *other* event on that date
-   happened to fire, or midnight. This breaks the app's own stated
-   live-update guarantee for exactly the crafted-request path this repo's
-   own standing practice says to check.
-   - Root cause: `cancel.ts` broadcast the client-submitted form field
-     directly, unlike `bookings.ts` (which broadcasts `booking.date`, the
-     value returned from the DB after validation) — an inconsistency
-     between the two write endpoints' own broadcast pattern that a reread
-     surfaced once the live check confirmed it mattered.
-   - Fix (`cbd021b`): `cancelBooking` (`src/lib/db.ts`) now returns the
-     deleted row's own `date` (or `null`) instead of a bare boolean;
-     `cancel.ts` broadcasts that authoritative value. The redirect still
-     uses the submitted field, since that only picks which view the
-     submitting browser lands on — harmless even if a client lies to
-     itself.
-   - Added a regression test (`spec/booking.test.ts`, "cancelling with a
-     crafted, mismatched date field") that posts a real crafted request
-     over `fetch` and reads the real SSE stream, asserting the broadcast
-     date matches the booking's real date and never contains the crafted
-     value.
-   - Reverified live in a real `agent-browser` tab (not just the vitest
-     regression): booked a room, opened the board on today's date in a
-     real tab, tagged `window.__marker`, cancelled via a raw `curl` with a
-     bogus date, and confirmed the tab actually reloaded (marker gone,
-     cancelled booking no longer shown) — the exact behaviour that was
-     broken before the fix.
-2. **Candidate (b), rapid double-submit of the same cancel form** — turned
-   out to already be closed. `spec/booking.test.ts`'s "cancelling the same
-   booking from multiple requests at once" (added two runs ago, `a1df375`)
-   already drives 5 genuinely concurrent cancel POSTs via `Promise.all` and
-   asserts no error and exactly-once cancellation. The prior hand-off's
-   claim that this "hasn't been driven live" was stale/mistaken — worth
-   rereading the actual spec file before treating a memory-recalled gap as
-   real, not just trusting the previous hand-off's own wording. No new
-   test needed; `cancelBooking`'s new `string | null` return (from the
-   fix above) is exercised by this existing concurrent test too (still
-   green: only the one request that actually deletes a row gets a non-null
-   date and emits; the other four get `null` and skip the emit, which is
-   the same one-emit-per-real-change invariant `addBooking`'s overlap
-   check already has).
-3. `pnpm check` green (48/48, one new test). Committed, pushed to
-   `origin/main`, deployed with `flyctl deploy --remote-only --ha=false`,
-   confirmed `https://comp4020-crit7-yunlin.fly.dev/` and `/readme/` both
-   200 on the redeployed machine.
-4. Scratch servers/DBs fully cleaned up (`rm -rf` the whole scratch dir
-   each time, per the WAL-sidecar lesson), `agent-browser` session closed,
-   `git status` clean.
+1. Took the last hand-off's advice to find a genuinely new angle rather
+   than another concurrency/crafted-input variant. Extended this repo's
+   own "boundary enumeration" lens (midnight rollover, tomorrow-view
+   rollover, SSE reconnect, crafted-cancel-date broadcast) to a boundary
+   *kind* none of those touched: Australian DST transitions.
+2. **Bug found**: `nextReloadDelayMinutes` (and the client's
+   `setTimeout(delay_minutes * 60_000)`) treated a wall-clock minute as
+   always equal to a real minute. False on the two nights a year Canberra
+   shifts clocks. Proved it concretely: a tab open at 01:00 Canberra time
+   on 2026-10-04 (this year's real spring-forward date) computes
+   `minutesUntilMidnight("01:00") = 1380`, but real Canberra midnight is
+   only 1320 real minutes away, since that calendar day is itself an hour
+   short (02:00 AEST jumps straight to 03:00 AEDT). The naive scheduled
+   reload fires 60 real minutes *after* the date has already rolled over —
+   a full hour of a stale "(today)" label and stale highlighting, on a
+   live-deployed app, for anyone with a tab open that specific night.
+3. **Fix** (`bad7b93`): added two functions to `src/lib/clock.ts` —
+   `canberraWallTimeToEpochMs(dateStr, hhmm)` (tries both AEST/AEDT
+   candidate UTC offsets, keeps whichever one's own Canberra-rendered
+   output matches the requested date+time; returns `null` only for the
+   skipped spring-forward hour, which never occurs in real time) and
+   `nextReloadTargetEpochMs(date, nowTime, boundaries)` (the absolute-epoch
+   counterpart to the existing minute-count functions, which are
+   unchanged). `index.astro` now computes `nextBoundaryTarget` as this
+   absolute epoch instead of a minute count, and the client script
+   computes its own delay as `target - Date.now()` at load time instead of
+   trusting a minute count computed at render time to still mean the same
+   number of real milliseconds by the time it fires. `canberraParts` and
+   `shiftDate` moved from a local duplicate in `index.astro` into
+   `clock.ts` proper (now shared, no behaviour change).
+4. Added 6 new deterministic unit tests to `spec/clock.test.ts`: ordinary
+   resolution, the skipped-hour-returns-null case, the exact 60-minute
+   naive-vs-correct divergence proof, exact-midnight landing across
+   spring-forward, preference for a sooner same-day boundary, and
+   correctness across the autumn fall-back night too (2026-04-05, the
+   repeated hour). All the original minute-arithmetic functions and their
+   tests are untouched — this adds a parallel, DST-safe path rather than
+   rewriting the existing one.
+5. Live-verified the *ordinary* (non-DST) reload path end-to-end against a
+   scratch preview server + scratch SQLite DB, since the whole scheduling
+   mechanism was refactored from minute-counts to absolute epochs and a
+   real DST transition can't be faked via a headless browser's system
+   clock in this environment: booked a room ~75s in the future, opened a
+   real `agent-browser` tab, tagged `window.__marker`, waited ~95s,
+   confirmed the marker was gone (genuine reload) and the booking now
+   rendered with `.active` (the "happening now" highlight correctly
+   turned on via the new epoch-based scheduling). Cleaned up all scratch
+   artifacts and closed the session afterwards.
+6. Re-audited `src/styles.css` for the "one accent, one meaning" rule
+   while in there — still clean, `.error` still plain ink, `--seal` still
+   only marks the active-booking highlight.
+7. `pnpm check` green both before and after live-verification: typecheck
+   clean (22 files), build clean, 54/54 tests passing (48 pre-existing +
+   6 new). Committed as `bad7b93`, pushed to `origin/main`, deployed with
+   `flyctl deploy --remote-only --ha=false -a comp4020-crit7-yunlin`
+   (machine reached good state, release v10). Confirmed live:
+   `https://comp4020-crit7-yunlin.fly.dev/` and `/readme/` both 200, and
+   the served HTML's `nextBoundaryTarget` value decodes to real tonight's
+   Canberra midnight — proof the new code, not stale cached content, is
+   live.
 
-**Single most important next action:** this closes the last two named
-candidates from the deepen list (one real bug fixed, one confirmed
-already covered) — six independent lenses have now found real, fixed
-bugs or clean results across this repo's two write endpoints, the
-wall-clock boundaries, the HD-band trio, forced-colors/contrast, and
-connection-drop robustness. The next run should look for a genuinely new
-angle rather than a further variant of concurrency/crafted-input checking
-on these same two endpoints, which is starting to feel thoroughly
-exhausted. Still 45h out at this run's start — not yet finishing steps;
-reflection and `PROCESS.md`'s final read-through stay deferred to the run
-the prompt calls last, per doctrine. Worth also glancing at whether this
-run's fix (the `cancelBooking` return-type change) needs backfilling into
-the repo-local `memory/MEMORY.md` too, per the standing "the two memory
-files don't stay in sync automatically" lesson — not yet done this run,
-should be first thing next run if not done here.
+**Single most important next action:** this closes a seventh independent
+lens on this repo (wall-clock boundaries now cover ordinary rollover,
+cross-view rollover, *and* DST transitions; plus the two write endpoints'
+concurrency/crafted-input surface, the HD-band trio, forced-colors/
+contrast, and connection-drop robustness). The next run should look for a
+genuinely new angle again rather than a further boundary-arithmetic
+variant on this same clock module, which is now thoroughly covered on
+both the ordinary and DST fronts. Candidate fresh angles not yet tried on
+this repo: whether the SQLite migration/seed boot sequence behaves
+correctly if two machine instances somehow raced to boot against an empty
+volume simultaneously (Fly with `ha=false` makes this unlikely but worth
+a five-minute check of whether it's actually impossible or just
+improbable); or a fresh full read-through of `README.md`/`PROCESS.md`
+against the app's current actual behaviour, since several fixes have
+landed since either was last reread end to end. Still 39h out at this
+run's start — not yet finishing steps; reflection and `PROCESS.md`'s
+final read-through stay deferred to the run the prompt calls last, per
+doctrine. This run's fix has already been backfilled into the repo-local
+`memory/MEMORY.md` — no pending sync gap this time.
